@@ -79,7 +79,7 @@ export function ListerDashboard() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="max-w-5xl">
+        <div className="mx-auto w-full max-w-5xl">
           <div className="mb-6">
             <h1 className="text-2xl font-bold tracking-tight">Welcome back, Kamal Hossain</h1>
             <p className="text-sm text-muted-foreground">Room Owner / Lister</p>
