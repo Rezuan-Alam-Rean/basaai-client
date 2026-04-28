@@ -14,7 +14,7 @@ import { BackButton } from "../components/back-button";
 
 const listerNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/lister" },
-  { icon: Home, label: "My Listings", path: "/lister" },
+  { icon: Home, label: "My Listings", path: "/lister/my-listings" },
   { icon: PlusCircle, label: "Add New Listing", path: "/add-listing" },
   { icon: Inbox, label: "Inquiries", path: "/lister" },
   { icon: MessageCircle, label: "Messages", path: "/messages" },
@@ -131,7 +131,7 @@ export function AddListingPage() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="max-w-3xl">
+        <div className="mx-auto w-full max-w-3xl">
           {/* Back Button */}
           <BackButton />
 

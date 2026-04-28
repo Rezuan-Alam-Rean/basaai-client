@@ -71,7 +71,7 @@ export function AccountSettingsPage() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="max-w-2xl">
+        <div className="mx-auto w-full max-w-2xl">
           <BackButton />
           <h1 className="text-2xl font-bold tracking-tight mb-1">Account Settings</h1>
           <p className="text-sm text-muted-foreground mb-8">Manage your profile and account preferences</p>

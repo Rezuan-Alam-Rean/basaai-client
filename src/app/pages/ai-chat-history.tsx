@@ -13,7 +13,7 @@ import { BackButton } from "../components/back-button";
 
 const seekerNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/seeker" },
-  { icon: Bookmark, label: "Saved Listings", path: "/seeker" },
+  { icon: Bookmark, label: "Saved Listings", path: "/seeker/saved-listings" },
   { icon: MessageCircle, label: "My Chats", path: "/messages" },
   { icon: Sparkles, label: "AI Chat History", path: "/ai-history" },
   { icon: Settings, label: "Account Settings", path: "/settings" },
@@ -135,7 +135,7 @@ export function AiChatHistoryPage() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="max-w-4xl">
+        <div className="mx-auto w-full max-w-4xl">
           {selectedSession && session ? (
             /* Conversation View */
             <>
