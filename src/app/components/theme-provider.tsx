@@ -15,16 +15,20 @@ const ThemeContext = createContext<ThemeContextType>({
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<Theme>("dark");
 
   useEffect(() => {
+    // Initialize theme from localStorage after hydration
     const saved = localStorage.getItem("bashaai-theme") as Theme | null;
-    if (saved === "light" || saved === "dark") {
-      setTheme(saved);
-    }
+    setTheme(saved || "dark");
+    setMounted(true);
   }, []);
 
   useEffect(() => {
+    // Only apply theme changes after mounted to avoid hydration mismatch
+    if (!mounted) return;
+    
     const root = document.documentElement;
     if (theme === "dark") {
       root.classList.add("dark");
@@ -32,7 +36,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       root.classList.remove("dark");
     }
     localStorage.setItem("bashaai-theme", theme);
-  }, [theme]);
+  }, [theme, mounted]);
 
   const toggleTheme = () => setTheme((prev) => (prev === "dark" ? "light" : "dark"));
 

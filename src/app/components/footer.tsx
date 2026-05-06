@@ -12,7 +12,7 @@ export function Footer() {
               <span className="text-lg font-bold">BashaAI</span>
             </div>
             <p className="text-sm text-muted-foreground mb-4">
-              Bangladesh&apos;s smartest way to find your next home.
+              Bangladesh's smartest way to find your next home.
             </p>
             <div className="flex gap-3">
               {["Facebook", "Instagram", "LinkedIn"].map((s) => (

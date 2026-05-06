@@ -1,41 +1,158 @@
-"use client";
-
-import { useState } from "react";
-import { usePathname } from "next/navigation";
-import type { Route } from "next";
+import { useMemo, useState } from "react";
 import {
   LayoutDashboard, Bookmark, MessageCircle, Sparkles, Settings, LogOut,
-  BookmarkMinus, Menu, X
+  Menu, X, Clock, ChevronRight, MapPin
 } from "lucide-react";
 import { Button } from "../components/ui/button";
-import { ListingCard, mockListings } from "../components/listing-card";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useAppSelector, useAppDispatch } from "../redux/hooks";
+import { logout } from "../redux/features/auth/authSlice";
+import { useGetSavedListingsQuery } from "../redux/features/listing/listingApi";
+import { useGetConversationsQuery } from "../redux/features/chat/messagingApi";
+import { useGetAiHistoryQuery } from "../redux/features/ai/aiApi";
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/seeker" },
-  { icon: Bookmark, label: "Saved Listings", path: "/seeker/saved-listings" },
+  { icon: Bookmark, label: "Saved Listings", path: "/saved-listings" },
   { icon: MessageCircle, label: "My Chats", path: "/messages" },
   { icon: Sparkles, label: "AI Chat History", path: "/ai-history" },
   { icon: Settings, label: "Account Settings", path: "/settings" },
   { icon: LogOut, label: "Logout", path: "/" },
 ];
 
-const searchHistory = [
-  { query: "Bachelor seat near Farmgate under 4000 taka with WiFi", time: "2 hours ago", results: 8 },
-  { query: "Room with meal facility in Mohammadpur", time: "5 hours ago", results: 12 },
-  { query: "Single room Dhanmondi attached bathroom", time: "Yesterday", results: 6 },
-];
+type HistoryListing = {
+  id: string;
+  title: string;
+  price: number;
+  location: string;
+  images?: string[];
+  owner?: { id: string; name: string } | null;
+};
+
+type HistoryMessage = {
+  id: string;
+  role: "USER" | "ASSISTANT" | "SYSTEM";
+  content: string;
+  createdAt: string;
+  listings?: HistoryListing[];
+};
+
+type HistorySession = {
+  id: string;
+  title: string;
+  summary: string;
+  dateLabel: string;
+  timeLabel: string;
+  results: number;
+  lastUpdated: number;
+};
+
+function formatDateLabel(value: string) {
+  const date = new Date(value);
+  return date.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+function formatTimeLabel(value: string) {
+  const date = new Date(value);
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function truncate(value: string, maxLength = 64) {
+  const trimmed = value.trim();
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength)}...` : trimmed;
+}
+
+function buildSessions(messages: HistoryMessage[]): HistorySession[] {
+  if (messages.length === 0) return [];
+
+  const grouped: HistorySession[] = [];
+  let current: HistorySession | null = null;
+
+  for (const row of messages) {
+    if (row.role === "USER") {
+      if (current) grouped.push(current);
+
+      const messageText = row.content || "AI Search";
+      const time = new Date(row.createdAt).getTime();
+
+      current = {
+        id: row.id,
+        title: truncate(messageText),
+        summary: truncate(messageText),
+        dateLabel: formatDateLabel(row.createdAt),
+        timeLabel: formatTimeLabel(row.createdAt),
+        results: 0,
+        lastUpdated: time,
+      };
+      continue;
+    }
+
+    if (!current) {
+      const time = new Date(row.createdAt).getTime();
+      current = {
+        id: row.id,
+        title: "AI Search",
+        summary: row.content || "AI response",
+        dateLabel: formatDateLabel(row.createdAt),
+        timeLabel: formatTimeLabel(row.createdAt),
+        results: 0,
+        lastUpdated: time,
+      };
+      continue;
+    }
+
+    current.lastUpdated = Math.max(current.lastUpdated, new Date(row.createdAt).getTime());
+
+    if (row.role === "ASSISTANT") {
+      current.summary = row.content ? truncate(row.content) : current.summary;
+      current.results = Math.max(current.results, (row.listings || []).length);
+    }
+  }
+
+  if (current) grouped.push(current);
+
+  return grouped.sort((a, b) => b.lastUpdated - a.lastUpdated).slice(0, 3);
+}
 
 export function SeekerDashboard() {
+  const [activeNav, setActiveNav] = useState("Dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const pathname = usePathname();
-  const isSavedListingsPage = pathname === "/seeker/saved-listings";
+  const { user } = useAppSelector((state) => state.auth);
+  const dispatch = useAppDispatch();
+  const router = useRouter();
+
+  const initials = user?.name ? user.name.split(" ").map(n => n[0]).join("").toUpperCase() : "U";
+  
+  // Dynamic data
+  const { data: savedData } = useGetSavedListingsQuery();
+  const { data: chatsData } = useGetConversationsQuery();
+  const { data: aiHistoryData } = useGetAiHistoryQuery();
+  const aiSessions = useMemo(() => {
+    const messages = Array.isArray(aiHistoryData?.messages) ? (aiHistoryData.messages as HistoryMessage[]) : [];
+    return buildSessions(messages);
+  }, [aiHistoryData]);
+  
+  const savedCount = (savedData?.listings || []).length;
+  const chatsCount = (chatsData?.conversations || []).length;
+  const aiSearchCount = (aiHistoryData?.sessions || []).length;
+  const recentSavedListings = (savedData?.listings || []).slice(0, 3);
+  const statCards = [
+    { label: "Saved Listings", value: String(savedCount) },
+    { label: "Active Chats", value: String(chatsCount) },
+    { label: "AI Searches", value: String(aiSearchCount) },
+  ].filter((card) => Number(card.value) > 0);
+
+  const handleLogout = () => {
+    dispatch(logout());
+    router.push("/");
+  };
 
   return (
     <div className="flex h-[calc(100vh-64px)]">
       {/* Mobile sidebar toggle */}
       <button
-        className="lg:hidden fixed bottom-20 right-4 z-30 w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg"
+        className="lg:hidden fixed bottom-6 left-4 z-30 w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg"
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
         {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -45,10 +162,10 @@ export function SeekerDashboard() {
       <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 fixed lg:relative z-20 w-64 h-full bg-card border-r border-border flex flex-col transition-transform`}>
         <div className="p-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">R</div>
+            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">{initials}</div>
             <div>
-              <p className="text-sm font-semibold">Rahim Uddin</p>
-              <p className="text-xs text-muted-foreground">Seeker Account</p>
+              <p className="text-sm font-semibold truncate max-w-[140px]">{user?.name || "Guest User"}</p>
+              <p className="text-xs text-muted-foreground capitalize">{user?.role?.toLowerCase()} Account</p>
             </div>
           </div>
         </div>
@@ -56,10 +173,13 @@ export function SeekerDashboard() {
           {navItems.map((n) => (
             <Link
               key={n.label}
-              href={n.path as Route}
-              onClick={() => { setSidebarOpen(false); }}
+              href={n.path}
+              onClick={() => { 
+                setSidebarOpen(false); 
+                if (n.label === "Logout") handleLogout();
+              }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                pathname === n.path ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                n.label === "Dashboard" ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
               }`}
             >
               <n.icon className="w-4 h-4" />
@@ -71,133 +191,95 @@ export function SeekerDashboard() {
 
       {/* Main content */}
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="mx-auto w-full max-w-5xl">
-          {isSavedListingsPage ? (
-            <>
-              <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <h1 className="text-2xl font-bold tracking-tight">Saved Listings</h1>
-                  <p className="text-sm text-muted-foreground">Track the listings you saved while searching for a place.</p>
-                </div>
-                <Link href="/search">
-                  <Button className="bg-primary hover:bg-primary/90">Find More Listings</Button>
-                </Link>
-              </div>
+        <div className="max-w-5xl mx-auto">
+          {/* Greeting */}
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold tracking-tight">Good morning, {user?.name?.split(" ")[0] || "there"} <span role="img">👋</span></h1>
+            <p className="text-sm text-muted-foreground">Explore and save your favorite listings</p>
+          </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-                {[
-                  { label: "Saved Listings", value: mockListings.slice(0, 4).length.toString() },
-                  { label: "Active Chats", value: "3" },
-                  { label: "AI Searches Today", value: "5" },
-                ].map((s) => (
-                  <div key={s.label} className="bg-card border border-border rounded-lg p-4">
-                    <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
-                    <p className="text-2xl font-bold">{s.value}</p>
+          {/* Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+            {statCards.map((s) => (
+              <div key={s.label} className="bg-card border border-border rounded-lg p-4">
+                <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
+                <p className="text-2xl font-bold">{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* AI Search History */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary" /> AI Search History
+              </h2>
+              <Link href="/ai-history">
+                <Button variant="outline" size="sm">All</Button>
+              </Link>
+            </div>
+            <div className="bg-card border border-border rounded-lg divide-y divide-border">
+              {aiSessions.length === 0 ? (
+                <div className="p-4 text-sm text-muted-foreground">No AI search history yet.</div>
+              ) : (
+                aiSessions.map((session) => (
+                  <div key={session.id} className="p-3 md:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm truncate">{session.title}</p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {session.dateLabel} at {session.timeLabel}
+                        </span>
+                        <span>{session.results} results</span>
+                      </p>
+                    </div>
+                    <Link href="/ai-history">
+                      <Button variant="ghost" size="sm" className="text-primary text-xs gap-1">
+                        View Results <ChevronRight className="w-3 h-3" />
+                      </Button>
+                    </Link>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* My Recent Saved Listings */}
+          <div>
+            <div className="flex items-center justify-between gap-3 mb-1">
+              <h2 className="text-lg font-semibold tracking-tight flex items-center gap-2">
+                <Bookmark className="w-4 h-4 text-primary" /> My Recent Saved Listings
+              </h2>
+              <Link href="/saved-listings">
+                <Button variant="outline" size="sm">All</Button>
+              </Link>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">Your latest saved listings are shown here</p>
+            {recentSavedListings.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {recentSavedListings.map((listing: any) => (
+                  <div key={listing.id} className="bg-card border border-border rounded-lg p-4 flex gap-3">
+                    <div className="w-20 h-20 rounded-md overflow-hidden bg-muted shrink-0">
+                      {listing.images?.[0] ? (
+                        <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">No photo</div>
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium line-clamp-2">{listing.title}</p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                        <MapPin className="w-3 h-3" />
+                        <span className="line-clamp-1">{listing.location}</span>
+                      </p>
+                      <p className="text-sm font-semibold text-primary mt-2">৳{listing.price.toLocaleString()}</p>
+                    </div>
                   </div>
                 ))}
               </div>
-
-              <div className="mb-8">
-                <h2 className="text-lg font-semibold tracking-tight mb-4">Your Saved Listings</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {mockListings.slice(0, 4).map((l) => (
-                    <div key={l.id} className="relative">
-                      <ListingCard listing={l} compact />
-                      <button className="absolute top-3 right-3 w-7 h-7 rounded-full bg-card/80 flex items-center justify-center hover:bg-destructive/20 transition-colors group">
-                        <BookmarkMinus className="w-4 h-4 text-muted-foreground group-hover:text-destructive" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h2 className="text-lg font-semibold tracking-tight mb-1 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-primary" /> Recommended For You
-                </h2>
-                <p className="text-xs text-muted-foreground mb-4">AI thinks you&apos;ll like these based on your searches</p>
-                <div className="flex gap-4 overflow-x-auto pb-4">
-                  {mockListings.slice(2, 5).map((l) => (
-                    <div key={l.id} className="min-w-[260px] max-w-[280px]">
-                      <ListingCard listing={l} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Greeting */}
-              <div className="mb-6">
-                <h1 className="text-2xl font-bold tracking-tight">Good morning, Rahim <span role="img">&#128075;</span></h1>
-                <p className="text-sm text-muted-foreground">You have 3 new matches today</p>
-              </div>
-
-              {/* Stats */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-                {[
-                  { label: "Saved Listings", value: "8" },
-                  { label: "Active Chats", value: "3" },
-                  { label: "AI Searches Today", value: "5" },
-                ].map((s) => (
-                  <div key={s.label} className="bg-card border border-border rounded-lg p-4">
-                    <p className="text-xs text-muted-foreground mb-1">{s.label}</p>
-                    <p className="text-2xl font-bold">{s.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* AI Search History */}
-              <div className="mb-8">
-                <h2 className="text-lg font-semibold tracking-tight mb-4 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-primary" /> AI Search History
-                </h2>
-                <div className="bg-card border border-border rounded-lg divide-y divide-border">
-                  {searchHistory.map((s, i) => (
-                    <div key={i} className="p-3 md:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm">{s.query}</p>
-                        <p className="text-xs text-muted-foreground">{s.time} &middot; {s.results} results</p>
-                      </div>
-                      <Link href="/search">
-                        <Button variant="ghost" size="sm" className="text-primary text-xs">View Results</Button>
-                      </Link>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Saved Listings */}
-              <div className="mb-8">
-                <h2 className="text-lg font-semibold tracking-tight mb-4">Saved Listings</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {mockListings.slice(0, 4).map((l) => (
-                    <div key={l.id} className="relative">
-                      <ListingCard listing={l} compact />
-                      <button className="absolute top-3 right-3 w-7 h-7 rounded-full bg-card/80 flex items-center justify-center hover:bg-destructive/20 transition-colors group">
-                        <BookmarkMinus className="w-4 h-4 text-muted-foreground group-hover:text-destructive" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Recommended */}
-              <div>
-                <h2 className="text-lg font-semibold tracking-tight mb-1 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-primary" /> Recommended For You
-                </h2>
-                <p className="text-xs text-muted-foreground mb-4">AI thinks you&apos;ll like these based on your searches</p>
-                <div className="flex gap-4 overflow-x-auto pb-4">
-                  {mockListings.slice(2, 5).map((l) => (
-                    <div key={l.id} className="min-w-[260px] max-w-[280px]">
-                      <ListingCard listing={l} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+            ) : null}
+          </div>
         </div>
       </main>
     </div>

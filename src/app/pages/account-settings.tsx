@@ -1,15 +1,18 @@
-"use client";
-
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Settings, LogOut, Camera, Save,
+  LayoutDashboard, Settings, LogOut, Camera, Save,
   Menu, X, ArrowLeft
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BackButton } from "../components/back-button";
+import { useAppDispatch, useAppSelector } from "../redux/hooks";
+import { logout } from "../redux/features/auth/authSlice";
+import { useGetMeQuery } from "../redux/features/auth/authApi";
+import { useUpdateUserMutation } from "../redux/features/user/userApi";
 
 const sidebarItems = [
   { icon: ArrowLeft, label: "Back to Dashboard", link: true },
@@ -18,12 +21,89 @@ const sidebarItems = [
 ];
 
 export function AccountSettingsPage() {
+  const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.auth.user);
+  const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    name: "",
+    phone: "",
+    address: "",
+    facebookUrl: "",
+    linkedinUrl: "",
+  });
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const { refetch } = useGetMeQuery();
+  const [updateUser, { isLoading: saving, error: saveError }] = useUpdateUserMutation();
+
+  const dashboardPath = useMemo(() => {
+    if (user?.role === "LISTER") return "/lister";
+    return "/seeker";
+  }, [user?.role]);
+
+  const displayName = user?.name || "User";
+  const displayRole = user?.role === "LISTER" ? "Lister Account" : "Seeker Account";
+  const avatarLetter = displayName.trim().charAt(0).toUpperCase() || "U";
+
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        name: user.name || "",
+        phone: user.phone || "",
+        address: user.address || "",
+        facebookUrl: user.facebookUrl || "",
+        linkedinUrl: user.linkedinUrl || "",
+      });
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreview(null);
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [avatarFile]);
+
+  const handleSave = async () => {
+    if (!user) return;
+    setSaveSuccess(null);
+
+    try {
+      const payload = new FormData();
+      payload.append("name", formData.name.trim());
+      payload.append("phone", formData.phone.trim());
+      payload.append("address", formData.address.trim());
+      payload.append("facebookUrl", formData.facebookUrl.trim());
+      payload.append("linkedinUrl", formData.linkedinUrl.trim());
+      if (avatarFile) {
+        payload.append("avatar", avatarFile);
+      }
+
+      await updateUser({ id: user.id, body: payload }).unwrap();
+      setSaveSuccess("Profile updated.");
+      refetch();
+    } catch (error: any) {
+      // Error handled by mutation state
+    }
+  };
+
+  const handleLogout = () => {
+    dispatch(logout());
+    router.push("/");
+  };
 
   return (
     <div className="flex h-[calc(100vh-64px)]">
       <button
-        className="lg:hidden fixed bottom-20 right-4 z-30 w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg"
+        className="lg:hidden fixed bottom-6 left-4 z-30 w-12 h-12 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-lg"
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
         {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
@@ -32,10 +112,16 @@ export function AccountSettingsPage() {
       <aside className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 fixed lg:relative z-20 w-64 h-full bg-card border-r border-border flex flex-col transition-transform`}>
         <div className="p-4 border-b border-border">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">R</div>
+            <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold overflow-hidden">
+              {user?.avatarUrl ? (
+                <img src={user.avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+              ) : (
+                avatarLetter
+              )}
+            </div>
             <div>
-              <p className="text-sm font-semibold">Rahim Uddin</p>
-              <p className="text-xs text-muted-foreground">Seeker Account</p>
+              <p className="text-sm font-semibold">{displayName}</p>
+              <p className="text-xs text-muted-foreground">{displayRole}</p>
             </div>
           </div>
         </div>
@@ -45,7 +131,7 @@ export function AccountSettingsPage() {
               return (
                 <Link
                   key={n.label}
-                  href="/seeker"
+                  href={dashboardPath}
                   className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
                 >
                   <n.icon className="w-4 h-4" />
@@ -56,6 +142,11 @@ export function AccountSettingsPage() {
             return (
               <button
                 key={n.label}
+                onClick={() => {
+                  if (n.label === "Logout") {
+                    handleLogout();
+                  }
+                }}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                   n.label === "Account Settings"
                     ? "bg-accent text-accent-foreground"
@@ -71,7 +162,7 @@ export function AccountSettingsPage() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="mx-auto w-full max-w-2xl">
+        <div className="max-w-2xl mx-auto">
           <BackButton />
           <h1 className="text-2xl font-bold tracking-tight mb-1">Account Settings</h1>
           <p className="text-sm text-muted-foreground mb-8">Manage your profile and account preferences</p>
@@ -81,10 +172,27 @@ export function AccountSettingsPage() {
             <h2 className="text-lg font-semibold tracking-tight mb-4">Profile Picture</h2>
             <div className="flex items-center gap-4">
               <div className="relative">
-                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-2xl font-bold text-muted-foreground">
-                  R
+                <div className="w-20 h-20 rounded-full bg-muted flex items-center justify-center text-2xl font-bold text-muted-foreground overflow-hidden">
+                  {avatarPreview ? (
+                    <img src={avatarPreview} alt="Profile preview" className="w-full h-full object-cover" />
+                  ) : user?.avatarUrl ? (
+                    <img src={user.avatarUrl} alt={displayName} className="w-full h-full object-cover" />
+                  ) : (
+                    avatarLetter
+                  )}
                 </div>
-                <button className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => setAvatarFile(event.target.files?.[0] || null)}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors"
+                >
                   <Camera className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -102,20 +210,29 @@ export function AccountSettingsPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm text-muted-foreground mb-1.5 block">Full Name</label>
-                  <Input defaultValue="Rahim Uddin" />
+                  <Input
+                    value={formData.name}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
+                  />
                 </div>
                 <div>
                   <label className="text-sm text-muted-foreground mb-1.5 block">Mobile Number</label>
-                  <Input defaultValue="+880 1712-345678" />
+                  <Input
+                    value={formData.phone}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, phone: e.target.value }))}
+                  />
                 </div>
               </div>
               <div>
                 <label className="text-sm text-muted-foreground mb-1.5 block">Email</label>
-                <Input defaultValue="rahim.uddin@email.com" />
+                <Input value={user?.email || ""} disabled />
               </div>
               <div>
                 <label className="text-sm text-muted-foreground mb-1.5 block">Address</label>
-                <Input defaultValue="Farmgate, Dhaka-1215" />
+                <Input
+                  value={formData.address}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, address: e.target.value }))}
+                />
               </div>
             </div>
           </div>
@@ -126,41 +243,35 @@ export function AccountSettingsPage() {
             <div className="space-y-4">
               <div>
                 <label className="text-sm text-muted-foreground mb-1.5 block">Facebook</label>
-                <Input placeholder="https://facebook.com/yourprofile" />
+                <Input
+                  placeholder="https://facebook.com/yourprofile"
+                  value={formData.facebookUrl}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, facebookUrl: e.target.value }))}
+                />
               </div>
               <div>
                 <label className="text-sm text-muted-foreground mb-1.5 block">LinkedIn</label>
-                <Input placeholder="https://linkedin.com/in/yourprofile" />
-              </div>
-            </div>
-          </div>
-
-          {/* Connected Account */}
-          <div className="mb-8">
-            <h2 className="text-lg font-semibold tracking-tight mb-4">Connected Accounts</h2>
-            <div className="bg-card border border-border rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                  <div>
-                    <p className="text-sm font-medium">Google Account</p>
-                    <p className="text-xs text-muted-foreground">rahim.uddin@gmail.com</p>
-                  </div>
-                </div>
-                <Badge variant="secondary" className="text-xs text-green-600 dark:text-green-400">Connected</Badge>
+                <Input
+                  placeholder="https://linkedin.com/in/yourprofile"
+                  value={formData.linkedinUrl}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, linkedinUrl: e.target.value }))}
+                />
               </div>
             </div>
           </div>
 
           {/* Save */}
-          <Button className="bg-primary hover:bg-primary/90 gap-2">
-            <Save className="w-4 h-4" /> Save Changes
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button className="bg-primary hover:bg-primary/90 gap-2" onClick={handleSave} disabled={saving || !user}>
+              <Save className="w-4 h-4" /> {saving ? "Saving..." : "Save Changes"}
+            </Button>
+            {saveSuccess && <span className="text-xs text-green-600 dark:text-green-400">{saveSuccess}</span>}
+            {saveError && (
+              <span className="text-xs text-red-600 dark:text-red-400">
+                {(saveError as any)?.data?.message || "Failed to update profile."}
+              </span>
+            )}
+          </div>
         </div>
       </main>
     </div>

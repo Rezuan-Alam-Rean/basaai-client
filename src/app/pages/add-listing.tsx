@@ -1,20 +1,22 @@
-"use client";
-
 import { useState } from "react";
 import {
   LayoutDashboard, Home, PlusCircle, Inbox, MessageCircle, BarChart2,
-  Settings, LogOut, Menu, X, Upload, ChevronDown, ChevronRight, MapPin
+  Settings, LogOut, Menu, X, Upload, ChevronDown, ChevronRight, MapPin, Car, Loader2, LocateFixed
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import type { Route } from "next";
 import { BackButton } from "../components/back-button";
+import { useAppSelector, useAppDispatch } from "../redux/hooks";
+import { logout } from "../redux/features/auth/authSlice";
+import { useAddListingMutation } from "../redux/features/listing/listingApi";
+import { toast } from "sonner";
 
 const listerNavItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/lister" },
-  { icon: Home, label: "My Listings", path: "/lister/my-listings" },
+  { icon: Home, label: "My Listings", path: "/lister" },
   { icon: PlusCircle, label: "Add New Listing", path: "/add-listing" },
   { icon: Inbox, label: "Inquiries", path: "/lister" },
   { icon: MessageCircle, label: "Messages", path: "/messages" },
@@ -32,7 +34,13 @@ const electricityOptions = ["Prepaid Meter", "Postpaid Meter"];
 const waterBillOptions = ["Included", "Separate"];
 
 export function AddListingPage() {
+  const router = useRouter();
+  const { user } = useAppSelector((state) => state.auth);
+  const dispatch = useAppDispatch();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [locating, setLocating] = useState(false);
+
+  const [addListing, { isLoading: loading }] = useAddListingMutation();
 
   // Collapsible section state — all open by default
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -51,7 +59,19 @@ export function AddListingPage() {
   });
 
   // Form state
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [totalBeds, setTotalBeds] = useState("");
+  const [availableSeats, setAvailableSeats] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [areaName, setAreaName] = useState("");
+  const [address, setAddress] = useState("");
+  const [neighborhood, setNeighborhood] = useState("");
+  const [city, setCity] = useState("Dhaka");
+  const [landmarks, setLandmarks] = useState("");
+  const [price, setPrice] = useState("");
+  const [advanceDeposit, setAdvanceDeposit] = useState("");
+  const [negotiable, setNegotiable] = useState("");
   const [selectedFacilities, setSelectedFacilities] = useState<string[]>([]);
   const [waterSupply, setWaterSupply] = useState("");
   const [gasType, setGasType] = useState("");
@@ -59,6 +79,100 @@ export function AddListingPage() {
   const [waterBill, setWaterBill] = useState("");
   const [parkingAvailable, setParkingAvailable] = useState(false);
   const [parkingType, setParkingType] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
+  const [availableFrom, setAvailableFrom] = useState("");
+  const [minStay, setMinStay] = useState("");
+  const [preferredTenant, setPreferredTenant] = useState<string[]>([]);
+
+  const initials = user?.name ? user.name.split(" ").map(n => n[0]).join("").toUpperCase() : "U";
+
+  const handleLogout = () => { dispatch(logout()); router.push("/"); };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const newFiles = Array.from(e.target.files);
+      setFiles(prev => [...prev, ...newFiles]);
+      setPreviews(prev => [...prev, ...newFiles.map(f => URL.createObjectURL(f))]);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    URL.revokeObjectURL(previews[index]);
+    setFiles(prev => prev.filter((_, i) => i !== index));
+    setPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async () => {
+    if (!title || !price || !areaName) {
+      toast.error("Please fill in title, price, and area");
+      return;
+    }
+    
+    const fd = new FormData();
+    fd.append("title", title);
+    fd.append("description", description);
+    fd.append("location", areaName || neighborhood);
+    if (address) fd.append("address", address);
+    if (city) fd.append("city", city);
+    fd.append("price", price);
+    if (totalBeds) fd.append("bedrooms", totalBeds);
+    if (availableSeats) fd.append("availableSeats", availableSeats);
+    if (advanceDeposit) fd.append("advanceDeposit", advanceDeposit);
+    if (negotiable) fd.append("negotiable", negotiable === "Yes" ? "true" : "false");
+    if (waterSupply) fd.append("waterSupply", waterSupply);
+    if (gasType) fd.append("gasType", gasType);
+    if (electricity) fd.append("electricity", electricity);
+    if (waterBill) fd.append("waterBill", waterBill);
+    if (parkingAvailable && parkingType) fd.append("parking", parkingType);
+    if (landmarks) fd.append("landmarks", landmarks);
+    if (availableFrom) fd.append("availableFrom", availableFrom);
+    if (minStay) fd.append("minStay", minStay);
+    selectedTypes.forEach(t => fd.append("propertyType", t));
+    selectedFacilities.forEach(f => fd.append("amenities", f));
+    preferredTenant.forEach(p => fd.append("preferredTenant", p));
+    files.forEach(file => fd.append("images", file));
+    
+    try {
+      await addListing(fd).unwrap();
+      toast.success("Listing published!"); 
+      router.push("/lister");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to publish listing");
+    }
+  };
+
+  const handleUseMyLocation = () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&accept-language=en`
+          );
+          const data = await res.json();
+          const addr = data.address || {};
+          setAreaName(addr.suburb || addr.neighbourhood || addr.village || "");
+          setCity(addr.city || addr.town || addr.state || "Dhaka");
+          setAddress(data.display_name || "");
+          setNeighborhood(addr.suburb || addr.neighbourhood || "");
+          toast.success("Location detected!");
+        } catch {
+          toast.error("Failed to reverse geocode location");
+        } finally { setLocating(false); }
+      },
+      (err) => {
+        setLocating(false);
+        toast.error(err.message || "Failed to get your location");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   const toggleSection = (s: string) =>
     setOpenSections((prev) => ({ ...prev, [s]: !prev[s] }));
@@ -103,11 +217,11 @@ export function AddListingPage() {
         <div className="p-4 border-b border-border">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
-              K
+              {initials}
             </div>
             <div>
-              <p className="text-sm font-semibold">Kamal Hossain</p>
-              <p className="text-xs text-muted-foreground">Lister Account</p>
+              <p className="text-sm font-semibold truncate max-w-[140px]">{user?.name || "Guest User"}</p>
+              <p className="text-xs text-muted-foreground capitalize">{user?.role?.toLowerCase()} Account</p>
             </div>
           </div>
         </div>
@@ -115,8 +229,8 @@ export function AddListingPage() {
           {listerNavItems.map((n) => (
             <Link
               key={n.label}
-              href={n.path as Route}
-              onClick={() => setSidebarOpen(false)}
+              href={n.path}
+              onClick={() => { setSidebarOpen(false); if (n.label === "Logout") handleLogout(); }}
               className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
                 n.label === "Add New Listing"
                   ? "bg-accent text-accent-foreground"
@@ -131,7 +245,7 @@ export function AddListingPage() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="mx-auto w-full max-w-3xl">
+        <div className="max-w-3xl mx-auto">
           {/* Back Button */}
           <BackButton />
 
@@ -150,26 +264,26 @@ export function AddListingPage() {
                     <label className="text-sm text-muted-foreground mb-1.5 block">
                       Listing Title
                     </label>
-                    <Input placeholder="e.g. Spacious Bachelor Seat — Mirpur-10" />
+                    <Input placeholder="e.g. Spacious Bachelor Seat — Mirpur-10" value={title} onChange={(e) => setTitle(e.target.value)} />
                   </div>
                   <div>
                     <label className="text-sm text-muted-foreground mb-1.5 block">
                       Description
                     </label>
-                    <Textarea rows={4} placeholder="Describe your listing in detail..." />
+                    <Textarea rows={4} placeholder="Describe your listing in detail..." value={description} onChange={(e) => setDescription(e.target.value)} />
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm text-muted-foreground mb-1.5 block">
                         Total Beds/Rooms
                       </label>
-                      <Input type="number" placeholder="e.g. 4" />
+                      <Input type="number" placeholder="e.g. 4" value={totalBeds} onChange={(e) => setTotalBeds(e.target.value)} />
                     </div>
                     <div>
                       <label className="text-sm text-muted-foreground mb-1.5 block">
                         Available Seats
                       </label>
-                      <Input type="number" placeholder="e.g. 2" />
+                      <Input type="number" placeholder="e.g. 2" value={availableSeats} onChange={(e) => setAvailableSeats(e.target.value)} />
                     </div>
                   </div>
                 </div>
@@ -205,9 +319,10 @@ export function AddListingPage() {
               {openSections["Location"] && (
                 <div className="space-y-3">
                   <div>
-                    <Input placeholder="Area name..." className="text-sm bg-muted border-border mb-2" />
-                    <Button variant="outline" size="sm" className="w-full text-xs gap-1">
-                      <MapPin className="w-3 h-3" /> Use my location
+                    <Input placeholder="Area name..." className="text-sm bg-muted border-border mb-2" value={areaName} onChange={(e) => setAreaName(e.target.value)} />
+                    <Button variant="outline" size="sm" className="w-full text-xs gap-1" onClick={handleUseMyLocation} disabled={locating}>
+                      {locating ? <Loader2 className="w-3 h-3 animate-spin" /> : <LocateFixed className="w-3 h-3" />}
+                      {locating ? "Detecting..." : "Use my location"}
                     </Button>
                   </div>
                   <div>
@@ -216,7 +331,7 @@ export function AddListingPage() {
                     </label>
                     <div className="relative">
                       <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input placeholder="House/Road/Block, Area, City" className="pl-9" />
+                      <Input placeholder="House/Road/Block, Area, City" className="pl-9" value={address} onChange={(e) => setAddress(e.target.value)} />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -224,18 +339,18 @@ export function AddListingPage() {
                       <label className="text-sm text-muted-foreground mb-1.5 block">
                         Area / Neighborhood
                       </label>
-                      <Input placeholder="e.g. Mirpur-10" />
+                      <Input placeholder="e.g. Mirpur-10" value={neighborhood} onChange={(e) => setNeighborhood(e.target.value)} />
                     </div>
                     <div>
                       <label className="text-sm text-muted-foreground mb-1.5 block">City</label>
-                      <Input defaultValue="Dhaka" />
+                      <Input value={city} onChange={(e) => setCity(e.target.value)} />
                     </div>
                   </div>
                   <div>
                     <label className="text-sm text-muted-foreground mb-1.5 block">
                       Nearby Landmarks (comma-separated)
                     </label>
-                    <Input placeholder="e.g. Mirpur-10 Bus Stand, BRAC University, Al-Amin Mosque" />
+                    <Input placeholder="e.g. Mirpur-10 Bus Stand, BRAC University, Al-Amin Mosque" value={landmarks} onChange={(e) => setLandmarks(e.target.value)} />
                     <p className="text-[10px] text-muted-foreground mt-1">
                       AI will also auto-detect nearby landmarks
                     </p>
@@ -253,13 +368,13 @@ export function AddListingPage() {
                     <label className="text-sm text-muted-foreground mb-1.5 block">
                       Monthly Rent (৳)
                     </label>
-                    <Input type="number" placeholder="e.g. 3500" />
+                    <Input type="number" placeholder="e.g. 3500" value={price} onChange={(e) => setPrice(e.target.value)} />
                   </div>
                   <div>
                     <label className="text-sm text-muted-foreground mb-1.5 block">
                       Advance Deposit (৳)
                     </label>
-                    <Input type="number" placeholder="e.g. 5000" />
+                    <Input type="number" placeholder="e.g. 5000" value={advanceDeposit} onChange={(e) => setAdvanceDeposit(e.target.value)} />
                   </div>
                   <div>
                     <label className="text-sm text-muted-foreground mb-1.5 block">
@@ -271,7 +386,7 @@ export function AddListingPage() {
                           key={o}
                           className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer hover:text-foreground"
                         >
-                          <input type="radio" name="negotiable" className="accent-primary w-3.5 h-3.5" />
+                          <input type="radio" name="negotiable" className="accent-primary w-3.5 h-3.5" checked={negotiable === o} onChange={() => setNegotiable(o)} />
                           {o}
                         </label>
                       ))}
@@ -466,20 +581,23 @@ export function AddListingPage() {
                     <p className="text-xs text-muted-foreground mb-4">
                       Drag & drop or click to upload. Max 10 photos, 5MB each.
                     </p>
-                    <Button variant="outline" size="sm">
-                      Choose Files
-                    </Button>
+                    <label>
+                      <Button variant="outline" size="sm" asChild><span>Choose Files</span></Button>
+                      <input type="file" multiple accept="image/*" onChange={handleFileChange} className="hidden" />
+                    </label>
                   </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                    {[1, 2, 3].map((i) => (
-                      <div
-                        key={i}
-                        className="aspect-square rounded-lg bg-muted flex items-center justify-center text-xs text-muted-foreground"
-                      >
-                        Photo {i}
-                      </div>
-                    ))}
-                  </div>
+                  {previews.length > 0 && (
+                    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                      {previews.map((url, i) => (
+                        <div key={url} className="aspect-square rounded-lg bg-muted relative group overflow-hidden">
+                          <img src={url} alt={`Photo ${i + 1}`} className="w-full h-full object-cover" />
+                          <button type="button" onClick={() => removeFile(i)} className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                            <X size={16} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -493,7 +611,7 @@ export function AddListingPage() {
                     <label className="text-sm text-muted-foreground mb-1.5 block">
                       Available From
                     </label>
-                    <Input type="date" />
+                    <Input type="date" value={availableFrom} onChange={(e) => setAvailableFrom(e.target.value)} />
                   </div>
                   <div>
                     <label className="text-sm text-muted-foreground mb-1.5 block">
@@ -509,6 +627,8 @@ export function AddListingPage() {
                             type="radio"
                             name="minStay"
                             className="accent-primary w-3.5 h-3.5"
+                            checked={minStay === d}
+                            onChange={() => setMinStay(d)}
                           />
                           {d}
                         </label>
@@ -529,6 +649,8 @@ export function AddListingPage() {
                             type="checkbox"
                             name="tenantPref"
                             className="accent-primary w-3.5 h-3.5"
+                            checked={preferredTenant.includes(t)}
+                            onChange={() => toggleCheckbox(t, preferredTenant, setPreferredTenant)}
                           />
                           {t}
                         </label>
@@ -543,9 +665,9 @@ export function AddListingPage() {
           {/* Submit */}
           <div className="flex items-center justify-end gap-3 mt-6">
             <Button variant="outline">Save as Draft</Button>
-            <Link href="/lister">
-              <Button className="bg-primary hover:bg-primary/90">Publish Listing</Button>
-            </Link>
+            <Button className="bg-primary hover:bg-primary/90" disabled={loading} onClick={handleSubmit}>
+              {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Publishing...</> : "Publish Listing"}
+            </Button>
           </div>
         </div>
       </main>
