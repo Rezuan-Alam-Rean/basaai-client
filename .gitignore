@@ -6,3 +6,4 @@ dist
 *.local
 .next
 .env
+.env.local
