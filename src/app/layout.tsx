@@ -1,28 +1,20 @@
 import type { Metadata } from "next";
-import "@/styles/index.css";
+import type { ReactNode } from "react";
+import "../styles/index.css";
 import { Providers } from "./providers";
-import { AppShell } from "@/components/layout/app-shell";
 
 export const metadata: Metadata = {
-  title: {
-    default: "Basa AI",
-    template: "%s | Basa AI",
-  },
-  description:
-    "Basa AI helps seekers and listers discover housing options with a fast, modern UI.",
+  title: "BashaAI",
+  description: "Find, list, and manage rentals with AI-powered search and messaging.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+      </head>
       <body>
-        <Providers>
-          <AppShell>{children}</AppShell>
-        </Providers>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

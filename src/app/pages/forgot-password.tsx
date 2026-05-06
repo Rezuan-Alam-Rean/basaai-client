@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import Link from "next/link";
 import { Sparkles, Mail, ArrowLeft, CheckCircle } from "lucide-react";
@@ -19,7 +17,7 @@ export function ForgotPasswordPage() {
           </div>
           <h1 className="text-2xl font-bold tracking-tight mb-1">Reset your password</h1>
           <p className="text-sm text-muted-foreground">
-            Enter your email and we&apos;ll send you a reset link
+            Enter your email and we'll send you a reset link
           </p>
         </div>
 
@@ -29,7 +27,7 @@ export function ForgotPasswordPage() {
               <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
               <h2 className="text-lg font-semibold">Check your email</h2>
               <p className="text-sm text-muted-foreground">
-                We&apos;ve sent a password reset link to your email address. Please check your inbox.
+                We've sent a password reset link to your email address. Please check your inbox.
               </p>
               <Link href="/login">
                 <Button variant="outline" className="w-full mt-4 gap-2">

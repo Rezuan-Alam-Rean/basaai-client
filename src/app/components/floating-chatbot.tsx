@@ -1,15 +1,12 @@
+"use client";
+
 import { useState, useRef, useEffect } from "react";
 import { Sparkles, X, Send, ChevronDown } from "lucide-react";
+import { Button } from "./ui/button";
 import { Input } from "./ui/input";
-import { Badge } from "./ui/badge";
-
-interface ChatMessage {
-  id: number;
-  from: "user" | "ai";
-  text: string;
-  time: string;
-  suggestions?: { title: string; price: string; match: string }[];
-}
+import { ListingCard } from "./listing-card";
+import { useAppSelector } from "../redux/hooks";
+import { useAiChat } from "./use-ai-chat";
 
 const quickPrompts = [
   "Find rooms near me",
@@ -17,60 +14,32 @@ const quickPrompts = [
   "Rooms with WiFi in Dhanmondi",
 ];
 
-const initialMessages: ChatMessage[] = [
-  {
-    id: 1,
-    from: "ai",
-    text: "Hi! I'm BashaAI, your smart room-finding assistant. How can I help you today?",
-    time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-  },
-];
-
 export function FloatingChatbot() {
+  const user = useAppSelector((state) => state.auth.user);
+  const isAuthenticated = Boolean(user);
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
-  const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
+  const {
+    chatInput,
+    setChatInput,
+    messages,
+    isTyping,
+    listingPageByMsg,
+    setListingPageByMsg,
+    handleSend,
+  } = useAiChat(isAuthenticated);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  const listingsPerPage = 3;
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages, isTyping]);
 
-  const handleSend = (text?: string) => {
-    const msg = text || input.trim();
-    if (!msg) return;
-
-    const userMsg: ChatMessage = {
-      id: Date.now(),
-      from: "user",
-      text: msg,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
-    setIsTyping(true);
-
-    setTimeout(() => {
-      const aiMsg: ChatMessage = {
-        id: Date.now() + 1,
-        from: "ai",
-        text: "I found some great options for you! Here are a few listings that match your needs:",
-        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-        suggestions: [
-          { title: "Bachelor Seat — Mirpur-10", price: "৳3,500", match: "94%" },
-          { title: "Single Room — Dhanmondi", price: "৳8,000", match: "88%" },
-        ],
-      };
-      setMessages((prev) => [...prev, aiMsg]);
-      setIsTyping(false);
-    }, 1500);
-  };
-
   return (
-    <>
+    <div className="floating-chatbot-root">
       {/* Floating Button */}
       {!open && (
         <button
@@ -131,21 +100,57 @@ export function FloatingChatbot() {
                     </div>
                   )}
                   <p className="text-sm">{m.text}</p>
-                  {m.suggestions && (
-                    <div className="mt-2 space-y-1.5">
-                      {m.suggestions.map((s) => (
-                        <div key={s.title} className="bg-background/50 rounded-md p-2 border border-border/50">
-                          <p className="text-xs font-medium">{s.title}</p>
-                          <div className="flex items-center justify-between mt-1">
-                            <span className="text-xs font-bold text-primary">{s.price}/mo</span>
-                            <Badge className="bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[10px] px-1 py-0">
-                              AI {s.match}
-                            </Badge>
-                          </div>
+                  {m.from === "ai" && m.listings && m.listings.length > 0 && (() => {
+                    const currentPage = listingPageByMsg[m.id] ?? 1;
+                    const totalPages = Math.ceil(m.listings.length / listingsPerPage);
+                    const startIndex = (currentPage - 1) * listingsPerPage;
+                    const pageListings = m.listings.slice(startIndex, startIndex + listingsPerPage);
+
+                    return (
+                      <div className="mt-2">
+                        <div className="grid gap-2">
+                          {pageListings.map((l) => (
+                            <div key={l.id} className="bg-background/60 rounded-lg border border-border/60 p-1">
+                              <ListingCard listing={l} compact />
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        {totalPages > 1 && (
+                          <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+                            <span>Page {currentPage} of {totalPages}</span>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setListingPageByMsg((prev) => ({
+                                    ...prev,
+                                    [m.id]: Math.max(1, currentPage - 1),
+                                  }))
+                                }
+                                className="px-2 py-1 rounded border border-border bg-background hover:bg-accent disabled:opacity-50"
+                                disabled={currentPage <= 1}
+                              >
+                                Prev
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setListingPageByMsg((prev) => ({
+                                    ...prev,
+                                    [m.id]: Math.min(totalPages, currentPage + 1),
+                                  }))
+                                }
+                                className="px-2 py-1 rounded border border-border bg-background hover:bg-accent disabled:opacity-50"
+                                disabled={currentPage >= totalPages}
+                              >
+                                Next
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <p className={`text-[10px] mt-1 ${m.from === "user" ? "text-primary-foreground/50" : "text-muted-foreground"}`}>
                     {m.time}
                   </p>
@@ -167,6 +172,7 @@ export function FloatingChatbot() {
                 </div>
               </div>
             )}
+            <div ref={chatEndRef} />
           </div>
 
           {/* Quick Prompts */}
@@ -188,29 +194,46 @@ export function FloatingChatbot() {
           <div className="p-3 border-t border-border">
             <div className="flex items-center gap-2">
               <Input
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 placeholder="Ask BashaAI anything..."
                 className="flex-1 rounded-full bg-muted border-border text-sm"
+                disabled={!isAuthenticated}
               />
               <button
                 onClick={() => handleSend()}
                 className="w-9 h-9 rounded-full bg-primary flex items-center justify-center hover:bg-primary/90 transition-colors shrink-0"
+                disabled={!isAuthenticated}
               >
                 <Send className="w-4 h-4 text-primary-foreground" />
               </button>
             </div>
+            {!isAuthenticated && (
+              <div className="mt-2 text-[11px] text-muted-foreground">
+                Please log in to use BashaAI chat.
+              </div>
+            )}
           </div>
         </div>
       )}
 
       <style>{`
+        body.hide-floating-chat .floating-chatbot-root {
+          display: none;
+        }
+
+        body.floating-chat-left .floating-chatbot-root > button,
+        body.floating-chat-left .floating-chatbot-root > div {
+          right: auto;
+          left: 1.5rem;
+        }
+
         @keyframes pulse {
           0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
           40% { opacity: 1; transform: scale(1); }
         }
       `}</style>
-    </>
+    </div>
   );
 }
