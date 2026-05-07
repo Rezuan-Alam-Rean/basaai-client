@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { Navbar } from "../components/navbar";
 import { usePathname } from "next/navigation";
+import { RouteGuard } from "../components/route-guard";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname() || "";
@@ -12,15 +13,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const useFullWidth = fullLayoutPrefixes.some((p) => pathname.startsWith(p));
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Navbar />
-      <main className="flex-1">
-        {useFullWidth ? (
-          children
-        ) : (
-          <div className="w-full max-w-7xl mx-auto px-4 md:px-8">{children}</div>
-        )}
-      </main>
-    </div>
+    <RouteGuard>
+      <div className="min-h-screen bg-background text-foreground">
+        <Navbar />
+        <main className="flex-1">
+          {useFullWidth ? (
+            children
+          ) : (
+            <div className="w-full max-w-7xl mx-auto px-4 md:px-8">{children}</div>
+          )}
+        </main>
+      </div>
+    </RouteGuard>
   );
 }

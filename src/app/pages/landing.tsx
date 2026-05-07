@@ -39,6 +39,11 @@ export function LandingPage() {
   const isAuthenticated = Boolean(user);
   const [mounted, setMounted] = useState(false);
   const [isChatFullscreen, setIsChatFullscreen] = useState(false);
+  const handleSignupRole = (role: "SEEKER" | "LISTER") => {
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("bashaai-signup-role", role);
+    }
+  };
   const {
     chatInput,
     setChatInput,
@@ -482,35 +487,37 @@ export function LandingPage() {
       </section>
 
       {/* CTA */}
-      <section className="px-4 md:px-8 lg:px-16 py-12">
-        <div className="max-w-4xl mx-auto bg-card border border-border rounded-xl p-6 md:p-10">
-          <div className="text-center mb-8">
-            <h2 className="text-2xl font-semibold tracking-tight mb-2">Join BashaAI Today</h2>
-            <p className="text-sm text-muted-foreground">Are you looking for a place, or do you have a place to offer?</p>
+      {mounted && !isAuthenticated ? (
+        <section className="px-4 md:px-8 lg:px-16 py-12">
+          <div className="max-w-4xl mx-auto bg-card border border-border rounded-xl p-6 md:p-10">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-semibold tracking-tight mb-2">Join BashaAI Today</h2>
+              <p className="text-sm text-muted-foreground">Are you looking for a place, or do you have a place to offer?</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
+              <div className="bg-muted/50 border border-border rounded-lg p-6 text-center">
+                <Search className="w-10 h-10 text-primary mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">I'm a Seeker</h3>
+                <p className="text-sm text-muted-foreground mb-4">Find bachelor seats, rooms and flats that match your exact needs using AI.</p>
+                <Link href="/signup?role=SEEKER" onClick={() => handleSignupRole("SEEKER")}>
+                  <Button className="bg-primary hover:bg-primary/90 w-full">Create Seeker Account</Button>
+                </Link>
+              </div>
+              <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-background border border-border items-center justify-center text-xs text-muted-foreground z-10">
+                or
+              </div>
+              <div className="bg-muted/50 border border-border rounded-lg p-6 text-center">
+                <Home className="w-10 h-10 text-primary mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">I'm a Lister</h3>
+                <p className="text-sm text-muted-foreground mb-4">Post your room or house listing and reach thousands of verified seekers.</p>
+                <Link href="/signup?role=LISTER" onClick={() => handleSignupRole("LISTER")}>
+                  <Button variant="outline" className="w-full">Create Lister Account</Button>
+                </Link>
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative">
-            <div className="bg-muted/50 border border-border rounded-lg p-6 text-center">
-              <Search className="w-10 h-10 text-primary mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">I'm a Seeker</h3>
-              <p className="text-sm text-muted-foreground mb-4">Find bachelor seats, rooms and flats that match your exact needs using AI.</p>
-              <Link href="/seeker">
-                <Button className="bg-primary hover:bg-primary/90 w-full">Create Seeker Account</Button>
-              </Link>
-            </div>
-            <div className="hidden md:flex absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-background border border-border items-center justify-center text-xs text-muted-foreground z-10">
-              or
-            </div>
-            <div className="bg-muted/50 border border-border rounded-lg p-6 text-center">
-              <Home className="w-10 h-10 text-primary mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">I'm a Lister</h3>
-              <p className="text-sm text-muted-foreground mb-4">Post your room or house listing and reach thousands of verified seekers.</p>
-              <Link href="/lister">
-                <Button variant="outline" className="w-full">Create Lister Account</Button>
-              </Link>
-            </div>
-          </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 }
