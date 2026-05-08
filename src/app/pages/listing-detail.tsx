@@ -6,12 +6,13 @@ import {
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { BackButton } from "../components/back-button";
 import { useGetListingQuery } from "../redux/features/listing/listingApi";
 import { useGetSavedListingsQuery, useSaveListingMutation } from "../redux/features/listing/listingApi";
 import { toast } from "sonner";
+import { useAppSelector } from "../redux/hooks";
 
 interface Listing {
   id: string;
@@ -49,11 +50,15 @@ interface Listing {
 
 export function ListingDetailPage() {
   const { id } = useParams() as { id: string };
+  const router = useRouter();
+  const user = useAppSelector((state) => state.auth.user);
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const isAuthenticated = Boolean(user || token);
   const { data, isLoading: loading } = useGetListingQuery(id || "");
   const listing = data?.listing as Listing | null;
   const [photocardOpen, setPhotocardOpen] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
-  const { data: savedData } = useGetSavedListingsQuery();
+  const { data: savedData } = useGetSavedListingsQuery(undefined, { skip: !isAuthenticated });
   const [saveListing, { isLoading: saving }] = useSaveListingMutation();
   const savedIds = (savedData?.listings || []).map((l: any) => l.id);
   const [isSaved, setIsSaved] = useState<boolean>(false);
@@ -64,6 +69,11 @@ export function ListingDetailPage() {
 
   const handleSave = async () => {
     if (!listing) return;
+    if (!isAuthenticated) {
+      toast.error("Please sign in to save listings");
+      router.push(`/login?redirect=${encodeURIComponent(`/listing/${listing.id}`)}`);
+      return;
+    }
     try {
       const res = await saveListing(listing.id).unwrap();
       setIsSaved(Boolean(res.saved));
