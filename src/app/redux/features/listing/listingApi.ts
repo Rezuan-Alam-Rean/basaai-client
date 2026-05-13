@@ -17,6 +17,13 @@ export const listingApi = baseApi.injectEndpoints({
       }),
       providesTags: ["Listing"],
     }),
+    getNearbyListings: builder.query<any, { lat: number; lng: number; radiusKm: number }>({
+      query: ({ lat, lng, radiusKm }) => ({
+        url: "/listings/nearby",
+        params: { lat, lng, radiusKm },
+      }),
+      providesTags: ["Listing"],
+    }),
     toggleListing: builder.mutation<any, string>({
       query: (id) => ({
         url: `/listings/${id}/toggle`,
@@ -47,6 +54,14 @@ export const listingApi = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["Listing"],
     }),
+    deleteListingImage: builder.mutation<any, { id: string; imageUrl: string }>({
+      query: ({ id, imageUrl }) => ({
+        url: `/listings/${id}/images`,
+        method: "DELETE",
+        body: { imageUrl },
+      }),
+      invalidatesTags: ["Listing"],
+    }),
     saveListing: builder.mutation<any, string>({
       query: (id) => ({ url: `/listings/${id}/save`, method: "POST" }),
       invalidatesTags: ["Listing"],
@@ -62,10 +77,12 @@ export const {
   useGetMyListingsQuery, 
   useGetListingQuery,
   useGetListingsQuery,
+  useGetNearbyListingsQuery,
   useGetSavedListingsQuery,
   useToggleListingMutation, 
   useDeleteListingMutation,
   useAddListingMutation,
-  useUpdateListingMutation
-  , useSaveListingMutation
+  useUpdateListingMutation,
+  useDeleteListingImageMutation,
+  useSaveListingMutation
 } = listingApi;

@@ -9,11 +9,19 @@ import { Textarea } from "../components/ui/textarea";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { BackButton } from "../components/back-button";
+import dynamic from "next/dynamic";
+import type { LocationPickerProps, LocationValue } from "../components/map/location-picker";
+
+const LocationPicker = dynamic<LocationPickerProps>(
+  () => import("../components/map/location-picker").then((m) => m.LocationPicker),
+  { ssr: false }
+);
 import { useAppSelector, useAppDispatch } from "../redux/hooks";
 import { logout } from "../redux/features/auth/authSlice";
-import { 
-  useGetListingQuery, 
-  useUpdateListingMutation 
+import {
+  useGetListingQuery,
+  useUpdateListingMutation,
+  useDeleteListingImageMutation
 } from "../redux/features/listing/listingApi";
 import { toast } from "sonner";
 
@@ -46,6 +54,7 @@ export function EditListingPage() {
 
   const { data, isLoading: fetching } = useGetListingQuery(id as string, { skip: !id });
   const [updateListing, { isLoading: loading }] = useUpdateListingMutation();
+  const [deleteListingImage] = useDeleteListingImageMutation();
 
   // Collapsible section state
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
@@ -87,6 +96,7 @@ export function EditListingPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [existingImages, setExistingImages] = useState<string[]>([]);
+  const [locationPoint, setLocationPoint] = useState<LocationValue | null>(null);
   const [availableFrom, setAvailableFrom] = useState("");
   const [minStay, setMinStay] = useState("");
   const [preferredTenant, setPreferredTenant] = useState<string[]>([]);
@@ -125,6 +135,9 @@ export function EditListingPage() {
       setParkingAvailable(!!l.parking);
       setParkingType(l.parking || "");
       setExistingImages(l.images || []);
+      if (l.latitude != null && l.longitude != null) {
+        setLocationPoint({ lat: l.latitude, lng: l.longitude });
+      }
       setAvailableFrom(l.availableFrom ? new Date(l.availableFrom).toISOString().split("T")[0] : "");
       setMinStay(l.minStay || "");
       if (l.preferredTenant) {
@@ -154,8 +167,15 @@ export function EditListingPage() {
     setPreviews(prev => prev.filter((_, i) => i !== index));
   };
 
-  const removeExistingImage = (index: number) => {
-    setExistingImages(prev => prev.filter((_, i) => i !== index));
+  const removeExistingImage = async (index: number, url: string) => {
+    if (!id) return;
+    try {
+      await deleteListingImage({ id, imageUrl: url }).unwrap();
+      setExistingImages(prev => prev.filter((_, i) => i !== index));
+      toast.success("Photo deleted");
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to delete photo");
+    }
   };
 
   const handleUseMyLocation = () => {
@@ -218,6 +238,10 @@ export function EditListingPage() {
     if (landmarks) fd.append("landmarks", landmarks);
     if (availableFrom) fd.append("availableFrom", availableFrom);
     if (minStay) fd.append("minStay", minStay);
+    if (locationPoint) {
+      fd.append("latitude", String(locationPoint.lat));
+      fd.append("longitude", String(locationPoint.lng));
+    }
     selectedTypes.forEach(t => fd.append("propertyType", t));
     selectedFacilities.forEach(f => fd.append("amenities", f));
     preferredTenant.forEach(p => fd.append("preferredTenant", p));
@@ -292,7 +316,7 @@ export function EditListingPage() {
       </aside>
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="max-w-3xl">
+        <div className="w-full max-w-5xl mx-auto">
           <BackButton />
           <h1 className="text-2xl font-bold tracking-tight mb-1">Edit Listing</h1>
           <p className="text-sm text-muted-foreground mb-8">Update your listing details</p>
@@ -373,6 +397,10 @@ export function EditListingPage() {
                     <label className="text-sm text-muted-foreground mb-1.5 block">Nearby Landmarks (comma-separated)</label>
                     <Input placeholder="e.g. Mirpur-10 Bus Stand, BRAC University, Al-Amin Mosque" value={landmarks} onChange={(e) => setLandmarks(e.target.value)} />
                   </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground mb-1.5 block">Pin Exact Location on Map</label>
+                    <LocationPicker value={locationPoint} onChange={setLocationPoint} />
+                  </div>
                 </div>
               )}
             </div>
@@ -442,7 +470,7 @@ export function EditListingPage() {
                         {existingImages.map((url, i) => (
                           <div key={url} className="aspect-square rounded-lg bg-muted relative group overflow-hidden">
                             <img src={url} alt={`Existing Photo ${i + 1}`} className="w-full h-full object-cover" />
-                            <button type="button" onClick={() => removeExistingImage(i)} className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button type="button" onClick={() => removeExistingImage(i, url)} className="absolute inset-0 flex items-center justify-center bg-black/40 text-white opacity-0 group-hover:opacity-100 transition-opacity">
                               <X size={16} />
                             </button>
                           </div>

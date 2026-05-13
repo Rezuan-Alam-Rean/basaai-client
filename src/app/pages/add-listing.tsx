@@ -9,6 +9,13 @@ import { Textarea } from "../components/ui/textarea";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { BackButton } from "../components/back-button";
+import dynamic from "next/dynamic";
+import type { LocationPickerProps, LocationValue } from "../components/map/location-picker";
+
+const LocationPicker = dynamic<LocationPickerProps>(
+  () => import("../components/map/location-picker").then((m) => m.LocationPicker),
+  { ssr: false }
+);
 import { useAppSelector, useAppDispatch } from "../redux/hooks";
 import { logout } from "../redux/features/auth/authSlice";
 import { useAddListingMutation } from "../redux/features/listing/listingApi";
@@ -81,6 +88,7 @@ export function AddListingPage() {
   const [parkingType, setParkingType] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
+  const [locationPoint, setLocationPoint] = useState<LocationValue | null>(null);
   const [availableFrom, setAvailableFrom] = useState("");
   const [minStay, setMinStay] = useState("");
   const [preferredTenant, setPreferredTenant] = useState<string[]>([]);
@@ -128,6 +136,10 @@ export function AddListingPage() {
     if (landmarks) fd.append("landmarks", landmarks);
     if (availableFrom) fd.append("availableFrom", availableFrom);
     if (minStay) fd.append("minStay", minStay);
+    if (locationPoint) {
+      fd.append("latitude", String(locationPoint.lat));
+      fd.append("longitude", String(locationPoint.lng));
+    }
     selectedTypes.forEach(t => fd.append("propertyType", t));
     selectedFacilities.forEach(f => fd.append("amenities", f));
     preferredTenant.forEach(p => fd.append("preferredTenant", p));
@@ -354,6 +366,12 @@ export function AddListingPage() {
                     <p className="text-[10px] text-muted-foreground mt-1">
                       AI will also auto-detect nearby landmarks
                     </p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-muted-foreground mb-1.5 block">
+                      Pin Exact Location on Map
+                    </label>
+                    <LocationPicker value={locationPoint} onChange={setLocationPoint} />
                   </div>
                 </div>
               )}

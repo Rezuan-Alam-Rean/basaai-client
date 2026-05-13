@@ -98,11 +98,18 @@ export function ListingCard({ listing, compact }: { listing: any; compact?: bool
           AI Match {aiMatch}%
         </Badge>
         <div className="mt-auto">
-          <Link href={`/listing/${listing.id}`}>
-            <Button variant="outline" size="sm" className="w-full text-xs h-8">
-              View Details
-            </Button>
-          </Link>
+          <div className="flex flex-col gap-2">
+            <Link href={`/listing/${listing.id}`}>
+              <Button variant="outline" size="sm" className="w-full text-xs h-8">
+                View Details
+              </Button>
+            </Link>
+            <Link href={`/map?listingId=${listing.id}`}>
+              <Button variant="ghost" size="sm" className="w-full text-xs h-8">
+                View on Map
+              </Button>
+            </Link>
+          </div>
         </div>
       </div>
     </div>

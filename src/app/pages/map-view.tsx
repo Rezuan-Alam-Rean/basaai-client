@@ -1,83 +1,204 @@
-import { useState } from "react";
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
 import { MapPin, Plus, Minus, Search } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useGetListingQuery, useGetNearbyListingsQuery } from "../redux/features/listing/listingApi";
 
-const pins = [
-  { id: 1, x: 25, y: 30, price: 3500, label: "Bachelor Seat", location: "Mirpur-10", facilities: ["WiFi", "No Smoking"] },
-  { id: 2, x: 45, y: 20, price: 8000, label: "Single Room", location: "Dhanmondi", facilities: ["Attached Bath", "Meals"] },
-  { id: 3, x: 60, y: 55, price: 2800, label: "Bachelor Seat", location: "Mohammadpur", facilities: ["WiFi", "Meals"] },
-  { id: 4, x: 70, y: 35, price: 15000, label: "Family Flat", location: "Uttara", facilities: ["Parking", "Line Gas"] },
-  { id: 5, x: 35, y: 60, price: 5500, label: "Single Room", location: "Farmgate", facilities: ["WiFi", "Rooftop"] },
-  { id: 6, x: 80, y: 45, price: 12000, label: "Sublet", location: "Gulshan", facilities: ["AC", "Attached Bath"] },
-  { id: 7, x: 15, y: 50, price: 4000, label: "Bachelor Seat", location: "Moghbazar", facilities: ["WiFi", "Water"] },
-  { id: 8, x: 55, y: 70, price: 6500, label: "Single Room", location: "Banani", facilities: ["WiFi", "Meals"] },
-  { id: 9, x: 40, y: 40, price: 3200, label: "Bachelor Seat", location: "Nilkhet", facilities: ["WiFi", "No Smoking"] },
-  { id: 10, x: 50, y: 50, price: 0, label: "You", location: "", facilities: [] },
+const markerIcon2x = new URL("leaflet/dist/images/marker-icon-2x.png", import.meta.url).toString();
+const markerIcon = new URL("leaflet/dist/images/marker-icon.png", import.meta.url).toString();
+const markerShadow = new URL("leaflet/dist/images/marker-shadow.png", import.meta.url).toString();
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(delete (L.Icon.Default.prototype as any)._getIconUrl);
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+});
+
+const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000/api/v1";
+
+const radiusOptions = [
+  { label: "500m", value: 0.5 },
+  { label: "1km", value: 1 },
+  { label: "2km", value: 2 },
+  { label: "5km", value: 5 },
 ];
 
-const radiusOptions = ["500m", "1km", "2km", "5km"];
+type MapCenter = { lat: number; lng: number };
+const defaultCenter: MapCenter = { lat: 23.8103, lng: 90.4125 };
+
+type Landmark = {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  category?: string;
+  distanceMeters?: number;
+};
+
+function MapFocus({ center }: { center: MapCenter }) {
+  const map = useMap();
+  useEffect(() => {
+    map.setView([center.lat, center.lng], map.getZoom(), { animate: true });
+  }, [center.lat, center.lng, map]);
+  return null;
+}
+
+function MapZoomControls() {
+  const map = useMap();
+  return (
+    <div className="absolute top-4 right-4 z-[401] flex flex-col gap-1">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-8 h-8 p-0 bg-card border border-border"
+        onClick={() => map.zoomIn()}
+      >
+        <Plus className="w-4 h-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-8 h-8 p-0 bg-card border border-border"
+        onClick={() => map.zoomOut()}
+      >
+        <Minus className="w-4 h-4" />
+      </Button>
+    </div>
+  );
+}
 
 export function MapViewPage() {
-  const [selectedPin, setSelectedPin] = useState<number>(1);
-  const [activeRadius, setActiveRadius] = useState("2km");
+  const params = useSearchParams();
+  const listingId = params.get("listingId");
+  const [center, setCenter] = useState<MapCenter>(defaultCenter);
+  const [activeRadius, setActiveRadius] = useState(radiusOptions[2]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mapType, setMapType] = useState<"map" | "satellite">("map");
+  const [query, setQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [landmarks, setLandmarks] = useState<Landmark[]>([]);
+  const [activeListingId, setActiveListingId] = useState<string | null>(null);
 
-  const listingPins = pins.filter((p) => p.price > 0);
-  const selected = pins.find((p) => p.id === selectedPin);
+  const { data: listingData } = useGetListingQuery(listingId || "", { skip: !listingId });
+  const listingFromQuery = listingData?.listing;
+
+  useEffect(() => {
+    if (listingFromQuery?.latitude != null && listingFromQuery?.longitude != null) {
+      setCenter({ lat: listingFromQuery.latitude, lng: listingFromQuery.longitude });
+      setActiveListingId(listingFromQuery.id);
+    }
+  }, [listingFromQuery]);
+
+  const { data: nearbyData, isLoading: loadingNearby } = useGetNearbyListingsQuery(
+    { lat: center.lat, lng: center.lng, radiusKm: activeRadius.value },
+    { skip: !center }
+  );
+
+  const listings = (nearbyData?.listings || []).filter((l: any) => l.latitude != null && l.longitude != null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchLandmarks = async () => {
+      const radiusMeters = Math.round(activeRadius.value * 1000);
+      const url = `${apiBase}/map/landmarks?lat=${center.lat}&lng=${center.lng}&radius=${radiusMeters}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!cancelled) {
+        setLandmarks(data?.landmarks || []);
+      }
+    };
+    fetchLandmarks().catch(() => setLandmarks([]));
+    return () => { cancelled = true; };
+  }, [center.lat, center.lng, activeRadius.value]);
+
+  const handleSearch = async () => {
+    if (!query.trim()) return;
+    setSearching(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&countrycodes=bd&q=${encodeURIComponent(query)}&limit=1`
+      );
+      const data = (await res.json()) as Array<{ lat: string; lon: string }>;
+      if (data.length > 0) {
+        setCenter({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
+        setActiveListingId(null);
+      }
+    } finally {
+      setSearching(false);
+    }
+  };
 
   return (
     <div className="flex h-[calc(100vh-64px)] relative">
-      {/* Mobile toggle */}
       <button
-        className="lg:hidden absolute top-3 left-3 z-20 bg-card border border-border rounded-md px-3 py-2 text-xs"
+        className="lg:hidden absolute top-3 left-3 z-[402] bg-card border border-border rounded-md px-3 py-2 text-xs"
         onClick={() => setSidebarOpen(!sidebarOpen)}
       >
         {sidebarOpen ? "Hide List" : "Show List"}
       </button>
 
-      {/* Left Panel */}
-      <div className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 absolute lg:relative z-10 w-72 lg:w-80 h-full bg-background border-r border-border flex flex-col transition-transform`}>
+      <div className={`${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:translate-x-0 absolute lg:relative z-[401] w-72 lg:w-80 h-full bg-background border-r border-border flex flex-col transition-transform`}>
         <div className="p-4 border-b border-border space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Search area or landmark..." className="pl-9 bg-muted border-border text-sm" />
+            <Input
+              placeholder="Search area or landmark..."
+              className="pl-9 bg-muted border-border text-sm"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            />
           </div>
-          <div className="flex gap-1.5">
+          <div className="flex gap-1.5 flex-wrap">
             {radiusOptions.map((r) => (
               <button
-                key={r}
+                key={r.label}
                 onClick={() => setActiveRadius(r)}
                 className={`px-3 py-1 rounded-md text-xs transition-colors ${
-                  activeRadius === r ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
+                  activeRadius.value === r.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
                 }`}
               >
-                {r}
+                {r.label}
               </button>
             ))}
           </div>
-          <p className="text-xs text-muted-foreground">12 listings found nearby</p>
+          <p className="text-xs text-muted-foreground">
+            {loadingNearby ? "Loading listings..." : `${listings.length} listings found nearby`}
+          </p>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {listingPins.map((p) => (
+          {listings.map((l: any) => (
             <button
-              key={p.id}
-              onClick={() => { setSelectedPin(p.id); setSidebarOpen(false); }}
+              key={l.id}
+              onClick={() => {
+                setCenter({ lat: l.latitude, lng: l.longitude });
+                setActiveListingId(l.id);
+                setSidebarOpen(false);
+              }}
               className={`w-full text-left p-3 border-b border-border/50 hover:bg-accent/50 transition-colors ${
-                selectedPin === p.id ? "bg-accent" : ""
+                activeListingId === l.id ? "bg-accent" : ""
               }`}
             >
               <div className="flex items-center justify-between mb-1">
-                <Badge variant="secondary" className="text-[10px]">{p.label}</Badge>
-                <span className="text-sm font-bold">৳{p.price.toLocaleString()}</span>
+                <Badge variant="secondary" className="text-[10px]">{l.propertyType || "Listing"}</Badge>
+                <span className="text-sm font-bold">৳{l.price.toLocaleString()}</span>
               </div>
               <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5">
                 <MapPin className="w-3 h-3" />
-                {p.location}, Dhaka
+                {l.location}, {l.city || "Dhaka"}
               </div>
-              <div className="flex gap-1">
-                {p.facilities.map((f) => (
+              <div className="flex gap-1 flex-wrap">
+                {(l.amenities || []).slice(0, 3).map((f: string) => (
                   <Badge key={f} variant="outline" className="text-[10px] px-1.5 py-0">{f}</Badge>
                 ))}
               </div>
@@ -86,77 +207,87 @@ export function MapViewPage() {
         </div>
       </div>
 
-      {/* Right Panel — Simulated Map */}
       <div className="flex-1 relative bg-muted/30 overflow-hidden">
-        {/* Grid overlay */}
-        <div className="absolute inset-0" style={{
-          backgroundImage: "linear-gradient(var(--border) 1px, transparent 1px), linear-gradient(90deg, var(--border) 1px, transparent 1px)",
-          backgroundSize: "40px 40px",
-        }} />
+        <MapContainer center={[center.lat, center.lng]} zoom={13} className="h-full w-full" zoomControl={false}>
+          {mapType === "map" ? (
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+          ) : (
+            <TileLayer
+              attribution='Tiles &copy; Esri'
+              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+            />
+          )}
 
-        {/* Pins */}
-        {pins.map((p) => {
-          const isYou = p.price === 0;
-          const isActive = p.id === selectedPin;
+          <MapFocus center={center} />
+          <Circle
+            center={[center.lat, center.lng]}
+            radius={activeRadius.value * 1000}
+            pathOptions={{ color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.08 }}
+          />
 
-          return (
-            <div
-              key={p.id}
-              className="absolute cursor-pointer transition-all duration-200"
-              style={{ left: `${p.x}%`, top: `${p.y}%`, transform: "translate(-50%, -100%)" }}
-              onClick={() => !isYou && setSelectedPin(p.id)}
+          {listings.map((l: any) => (
+            <Marker
+              key={l.id}
+              position={[l.latitude, l.longitude]}
+              eventHandlers={{
+                click: () => setActiveListingId(l.id),
+              }}
             >
-              {isYou ? (
-                <div className="flex flex-col items-center">
-                  <div className="w-4 h-4 rounded-full bg-green-500 border-2 border-white shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
-                  <span className="text-[10px] text-green-400 mt-1">You are here</span>
+              <Popup>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold">{l.title}</p>
+                  <p className="text-xs text-muted-foreground">{l.location}, {l.city || "Dhaka"}</p>
+                  <p className="text-sm font-bold">৳{l.price.toLocaleString()}/mo</p>
+                  <Link href={`/listing/${l.id}`} className="text-xs text-primary underline">
+                    View details
+                  </Link>
                 </div>
-              ) : (
-                <div className="flex flex-col items-center">
-                  <div className={`rounded-full px-2 py-0.5 text-xs font-bold transition-all ${
-                    isActive
-                      ? "bg-primary text-primary-foreground scale-125 shadow-[0_0_15px_rgba(59,130,246,0.5)]"
-                      : "bg-card text-foreground border border-border hover:bg-primary/80 hover:text-primary-foreground"
-                  }`}>
-                    ৳{(p.price / 1000).toFixed(1)}k
-                  </div>
-                  <div className="w-0 h-0 border-l-[4px] border-r-[4px] border-t-[6px] border-l-transparent border-r-transparent border-t-card" />
-                </div>
-              )}
-            </div>
-          );
-        })}
+              </Popup>
+            </Marker>
+          ))}
 
-        {/* Active pin popup */}
-        {selected && selected.price > 0 && (
-          <div
-            className="absolute z-10 bg-card border border-primary/30 rounded-lg p-3 w-52 shadow-lg ring-1 ring-blue-500/20"
-            style={{ left: `${selected.x}%`, top: `${selected.y - 2}%`, transform: "translate(-50%, -100%)" }}
+          {landmarks.map((lm) => (
+            <CircleMarker
+              key={lm.id}
+              center={[lm.lat, lm.lng]}
+              radius={5}
+              pathOptions={{ color: "#16a34a", fillColor: "#16a34a", fillOpacity: 0.6 }}
+            >
+              <Popup>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold">{lm.name}</p>
+                  {lm.category && <p className="text-[10px] text-muted-foreground">{lm.category}</p>}
+                  {lm.distanceMeters != null && (
+                    <p className="text-[10px] text-muted-foreground">{(lm.distanceMeters / 1000).toFixed(2)} km away</p>
+                  )}
+                </div>
+              </Popup>
+            </CircleMarker>
+          ))}
+
+          <MapZoomControls />
+        </MapContainer>
+
+        <div className="absolute bottom-4 right-4 flex gap-1 z-[401]">
+          <button
+            className={`px-3 py-1.5 text-xs rounded-l-md border border-border ${
+              mapType === "map" ? "bg-card text-foreground" : "bg-muted text-muted-foreground"
+            }`}
+            onClick={() => setMapType("map")}
           >
-            <p className="text-xs font-semibold mb-1">{selected.label} — {selected.location}</p>
-            <p className="text-sm font-bold text-primary mb-1">৳{selected.price.toLocaleString()}/mo</p>
-            <div className="flex gap-1">
-              {selected.facilities.map((f) => (
-                <Badge key={f} variant="secondary" className="text-[10px] px-1 py-0">{f}</Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Zoom controls */}
-        <div className="absolute top-4 right-4 flex flex-col gap-1">
-          <Button variant="ghost" size="sm" className="w-8 h-8 p-0 bg-card border border-border">
-            <Plus className="w-4 h-4" />
-          </Button>
-          <Button variant="ghost" size="sm" className="w-8 h-8 p-0 bg-card border border-border">
-            <Minus className="w-4 h-4" />
-          </Button>
-        </div>
-
-        {/* Map type toggle */}
-        <div className="absolute bottom-4 right-4 flex gap-1">
-          <button className="px-3 py-1.5 text-xs rounded-l-md bg-card border border-border text-foreground">Map</button>
-          <button className="px-3 py-1.5 text-xs rounded-r-md bg-muted border border-border text-muted-foreground">Satellite</button>
+            Map
+          </button>
+          <button
+            className={`px-3 py-1.5 text-xs rounded-r-md border border-border ${
+              mapType === "satellite" ? "bg-card text-foreground" : "bg-muted text-muted-foreground"
+            }`}
+            onClick={() => setMapType("satellite")}
+          >
+            Satellite
+          </button>
         </div>
       </div>
     </div>

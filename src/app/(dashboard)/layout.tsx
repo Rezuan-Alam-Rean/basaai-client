@@ -8,7 +8,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname() || "";
 
   // Pages under these paths render their own sidebar/full layout — don't constrain/center them
-  const fullLayoutPrefixes = ["/lister", "/seeker", "/messages", "/chat", "/settings", "/add-listing", "/ai-history", "/saved-listings"];
+  const fullLayoutPrefixes = [
+    "/lister",
+    "/seeker",
+    "/messages",
+    "/chat",
+    "/settings",
+    "/add-listing",
+    "/edit-listing",
+    "/ai-history",
+    "/saved-listings",
+  ];
   const useFullWidth = fullLayoutPrefixes.some((p) => pathname.startsWith(p));
 
   return (

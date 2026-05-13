@@ -38,6 +38,8 @@ interface Listing {
   landmarks: string | null;
   minStay: string | null;
   preferredTenant: string[];
+  latitude?: number | null;
+  longitude?: number | null;
   owner: {
     id: string;
     name: string;
@@ -293,6 +295,11 @@ export function ListingDetailPage() {
               <Button variant="outline" className="w-full gap-2" onClick={handleSave} disabled={saving}>
                 <Bookmark className="w-4 h-4" /> {saving ? "Updating..." : isSaved ? "Unsave Listing" : "Save Listing"}
               </Button>
+              <Link href={`/map?listingId=${listing.id}`}>
+                <Button variant="outline" className="w-full gap-2">
+                  <MapPin className="w-4 h-4" /> View on Map
+                </Button>
+              </Link>
               <Button variant="ghost" className="w-full gap-2 text-muted-foreground" onClick={() => setPhotocardOpen(true)}>
                 <Share2 className="w-4 h-4" /> Share Photocard
               </Button>
