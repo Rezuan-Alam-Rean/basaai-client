@@ -1,5 +1,7 @@
+"use client";
+
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Sparkles, Mail, Lock, Eye, EyeOff, User, Phone, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -11,8 +13,11 @@ import { GoogleLogin } from "@react-oauth/google";
 import { toast } from "sonner";
 
 export function SignupPage() {
+  const searchParams = useSearchParams();
+  // console.log("Current search params:", searchParams.get("role"));
   const [mounted, setMounted] = useState(false);
   const [showPass, setShowPass] = useState(false);
+  
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -21,13 +26,26 @@ export function SignupPage() {
     role: "SEEKER",
   });
 
+  // console.log("Form data state:", formData.role);
+
   const [register, { isLoading: isRegisterLoading }] = useRegisterMutation();
   const [googleAuth, { isLoading: isGoogleLoading }] = useGoogleAuthMutation();
   const router = useRouter();
 
   useEffect(() => {
     setMounted(true);
+    const roleParam = (searchParams.get("role") || "").toString().trim().toUpperCase();
+    // console.log("Role param:", roleParam);
+
+    setFormData((prev) => ({
+      ...prev,
+      role: roleParam
+    }));
   }, []);
+
+  // console.log("Form data:", formData);
+
+  // No extra role-sync needed: initial role is read from URL on mount
 
   const dispatch = useAppDispatch();
   const { loading } = useAppSelector((state) => state.auth);
@@ -41,6 +59,9 @@ export function SignupPage() {
   };
 
   const handleRoleChange = (value: string) => {
+
+    // console.log("Role changed to:", value);
+
     setFormData((prev) => ({
       ...prev,
       role: value,
@@ -192,8 +213,8 @@ export function SignupPage() {
                 <SelectValue placeholder="Select your role" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="SEEKER">Seeker (Looking for a home)</SelectItem>
                 <SelectItem value="LISTER">Lister (Renting out a home)</SelectItem>
+                <SelectItem value="SEEKER">Seeker (Looking for a home)</SelectItem>
               </SelectContent>
             </Select>
           </div>
