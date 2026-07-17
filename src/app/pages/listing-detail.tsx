@@ -50,6 +50,24 @@ interface Listing {
   };
 }
 
+function getAmenityIcon(name: string) {
+  const normalized = name.toLowerCase();
+  if (normalized.includes("wifi")) return Wifi;
+  if (normalized.includes("meal")) return UtensilsCrossed;
+  if (normalized.includes("bath")) return Bath;
+  if (normalized.includes("ac")) return Wind;
+  if (normalized.includes("smok")) return X;
+  if (normalized.includes("roof")) return Home;
+  if (normalized.includes("parking")) return Home;
+  return CheckCircle;
+}
+
+function hasParking(value: string | null) {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 && normalized !== "none" && normalized !== "no";
+}
+
 export function ListingDetailPage() {
   const { id } = useParams() as { id: string };
   const router = useRouter();
@@ -106,11 +124,14 @@ export function ListingDetailPage() {
   }
 
   const facilities = [
-    { name: "WiFi Available", icon: Wifi, available: listing.amenities.includes("WiFi") },
-    { name: "Meal Facility", icon: UtensilsCrossed, available: listing.amenities.includes("Meal Facility") },
-    { name: "AC", icon: Wind, available: listing.amenities.includes("AC") },
-    { name: "Attached Bathroom", icon: Bath, available: listing.amenities.includes("Attached Bathroom") },
-    { name: "Parking", icon: Home, available: !!listing.parking },
+    ...(listing.amenities || []).filter(Boolean).map((name) => ({
+      name,
+      icon: getAmenityIcon(name),
+      value: "Available",
+    })),
+    ...(hasParking(listing.parking)
+      ? [{ name: "Parking", icon: Home, value: listing.parking as string }]
+      : []),
   ];
 
   const details = [
@@ -213,17 +234,21 @@ export function ListingDetailPage() {
             {/* Facilities */}
             <h2 className="text-lg font-semibold tracking-tight mb-4">Facilities & Amenities</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-              {facilities.map((f) => (
-                <div key={f.name} className={`bg-card border rounded-lg p-3 flex items-center gap-2.5 ${f.available ? "border-border" : "border-border/50 opacity-60"}`}>
-                  <f.icon className={`w-4 h-4 ${f.available ? "text-green-400" : "text-red-400"}`} />
+              {facilities.length > 0 ? facilities.map((f) => (
+                <div key={`${f.name}-${f.value}`} className="bg-card border border-border rounded-lg p-3 flex items-center gap-2.5">
+                  <f.icon className="w-4 h-4 text-green-400" />
                   <div>
                     <p className="text-xs">{f.name}</p>
-                    <span className={`text-[10px] ${f.available ? "text-green-400" : "text-red-400"}`}>
-                      {f.available ? "Available" : "Not Available"}
+                    <span className="text-[10px] text-green-400">
+                      {f.value}
                     </span>
                   </div>
                 </div>
-              ))}
+              )) : (
+                <div className="col-span-full bg-muted/30 border border-border/50 rounded-lg p-4 text-sm text-muted-foreground">
+                  No facilities mentioned
+                </div>
+              )}
             </div>
 
             {/* Utility Details */}
@@ -244,7 +269,7 @@ export function ListingDetailPage() {
             {landmarkList.length > 0 && (
               <>
                 <h2 className="text-lg font-semibold tracking-tight mb-4 flex items-center gap-2">
-                  <Navigation className="w-4 h-4 text-primary" /> Nearby Landmarks (AI Detected)
+                  <Navigation className="w-4 h-4 text-primary" /> Nearby Landmarks
                 </h2>
                 <div className="bg-card border border-border rounded-lg divide-y divide-border mb-8">
                   {landmarkList.map((l, i) => (

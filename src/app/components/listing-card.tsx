@@ -12,7 +12,6 @@ export interface ListingData {
   price: number;
   amenities?: string[];
   facilities?: string[]; // Fallback
-  aiMatch?: number;
   images?: string[];
   imageUrl?: string; // Fallback
 }
@@ -26,7 +25,6 @@ export const mockListings: ListingData[] = [
     price: 2800,
     amenities: ["WiFi", "No Smoking", "Water"],
     images: ["https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?q=80&w=1200&auto=format&fit=crop"],
-    aiMatch: 78,
   },
   {
     id: "2",
@@ -36,7 +34,6 @@ export const mockListings: ListingData[] = [
     price: 12000,
     amenities: ["Gas", "Parking", "Lift"],
     images: ["https://images.unsplash.com/photo-1507089947368-19c1da9775ae?q=80&w=1200&auto=format&fit=crop"],
-    aiMatch: 76,
   },
   {
     id: "3",
@@ -46,11 +43,10 @@ export const mockListings: ListingData[] = [
     price: 3500,
     amenities: ["Meals", "WiFi", "Attached Bath"],
     images: ["https://images.unsplash.com/photo-1505691938895-1758d7feb511?q=80&w=1200&auto=format&fit=crop"],
-    aiMatch: 98,
   },
 ];
 
-export function ListingCard({ listing, compact }: { listing: any; compact?: boolean }) {
+export function ListingCard({ listing, compact, chatCompact }: { listing: any; compact?: boolean; chatCompact?: boolean }) {
   // Map backend fields to frontend display
   const title = listing.title;
   const location = listing.location;
@@ -58,9 +54,57 @@ export function ListingCard({ listing, compact }: { listing: any; compact?: bool
   const type = listing.propertyType || listing.type;
   const facilities = listing.amenities || listing.facilities || [];
   const imageUrl = (listing.images && listing.images.length > 0) ? listing.images[0] : listing.imageUrl;
-  
-  // Use provided AI match or default to 85 (no random generation to avoid hydration mismatch)
-  const aiMatch = listing.aiMatch ?? 85;
+
+  if (chatCompact) {
+    return (
+      <div className="group rounded-md border border-border bg-card hover:bg-accent/30 transition-colors overflow-hidden">
+        <div className="flex gap-2 p-2">
+          <div className="w-16 h-16 rounded-md bg-muted overflow-hidden shrink-0">
+            {imageUrl ? (
+              <img src={imageUrl} alt={title} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-[10px] text-muted-foreground">
+                No image
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="font-semibold text-xs leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                {title}
+              </h3>
+              <p className="text-xs font-bold shrink-0">&#2547; {price.toLocaleString()}</p>
+            </div>
+            <div className="flex items-center gap-1 text-muted-foreground text-[10px] mt-1">
+              <MapPin className="w-2.5 h-2.5 shrink-0" />
+              <span className="truncate">{location}</span>
+            </div>
+            <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+              {type ? (
+                <Badge variant="secondary" className="text-[9px] px-1 py-0 font-normal">
+                  {type}
+                </Badge>
+              ) : null}
+              {facilities.slice(0, 2).map((f: string) => (
+                <Badge key={f} variant="outline" className="text-[9px] px-1 py-0 font-normal">
+                  {f}
+                </Badge>
+              ))}
+            </div>
+            <div className="mt-2 flex gap-1.5">
+              <Link href={`/listing/${listing.id}`} className="text-[10px] text-primary hover:underline">
+                Details
+              </Link>
+              <span className="text-[10px] text-muted-foreground">/</span>
+              <Link href={`/map?listingId=${listing.id}`} className="text-[10px] text-primary hover:underline">
+                Map
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="group rounded-lg border border-border bg-card shadow-sm hover:-translate-y-0.5 transition-all duration-200 overflow-hidden flex flex-col h-full">
@@ -84,7 +128,7 @@ export function ListingCard({ listing, compact }: { listing: any; compact?: bool
         <h3 className="font-semibold text-sm line-clamp-1 mb-1 group-hover:text-primary transition-colors">
           {title}
         </h3>
-        <p className="text-xl font-bold text-foreground mb-2">
+        <p className={`${compact ? "text-lg" : "text-xl"} font-bold text-foreground mb-2`}>
           &#2547; {price.toLocaleString()} / month
         </p>
         <div className="flex flex-wrap gap-1 mb-3">
@@ -94,9 +138,6 @@ export function ListingCard({ listing, compact }: { listing: any; compact?: bool
             </Badge>
           ))}
         </div>
-        <Badge className="w-fit mb-3 bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-500/30 text-[10px] px-1.5 py-0">
-          AI Match {aiMatch}%
-        </Badge>
         <div className="mt-auto">
           <div className="flex flex-col gap-2">
             <Link href={`/listing/${listing.id}`}>

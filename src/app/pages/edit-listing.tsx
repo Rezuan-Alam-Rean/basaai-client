@@ -315,8 +315,8 @@ export function EditListingPage() {
         </nav>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="w-full max-w-5xl mx-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <div className="w-full">
           <BackButton />
           <h1 className="text-2xl font-bold tracking-tight mb-1">Edit Listing</h1>
           <p className="text-sm text-muted-foreground mb-8">Update your listing details</p>

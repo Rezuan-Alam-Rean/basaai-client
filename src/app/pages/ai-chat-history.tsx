@@ -195,8 +195,8 @@ export function AiChatHistoryPage() {
         </nav>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 flex justify-center">
-        <div className="w-full max-w-5xl mx-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <div className="w-full">
           {isLoading ? (
             <div className="min-h-[50vh] flex items-center justify-center text-sm text-muted-foreground">
               Loading AI history...

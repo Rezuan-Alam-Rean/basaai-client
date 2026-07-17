@@ -27,6 +27,7 @@ export function RouteGuard({ children }: { children: ReactNode }) {
   const { isFetching, isLoading, isError } = useGetMeQuery(undefined, {
     skip: !token,
   });
+  const isAuthenticated = Boolean(user || token);
 
   const requiredRole = useMemo(() => {
     if (matchesPrefix(pathname, listerOnlyPrefixes)) return "LISTER";
@@ -37,22 +38,23 @@ export function RouteGuard({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!clientReady) return;
 
-    if (!token) {
+    if (!isAuthenticated) {
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
       return;
     }
 
-    if (isError) {
+    if (isError && !user) {
       localStorage.removeItem("token");
+      setToken(null);
       router.replace(`/login?redirect=${encodeURIComponent(pathname)}`);
     }
-  }, [clientReady, token, isError, router, pathname]);
+  }, [clientReady, isAuthenticated, isError, user, router, pathname]);
 
   const isAuthLoading = Boolean(token) && (isLoading || isFetching) && !user;
   const isRoleMismatch = Boolean(requiredRole && user && user.role !== requiredRole);
 
   if (!clientReady) return null;
-  if (!token || isError) return null;
+  if (!isAuthenticated || (isError && !user)) return null;
   if (isAuthLoading) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center text-sm text-muted-foreground">

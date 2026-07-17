@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  LayoutDashboard, Settings, LogOut, Camera, Save,
-  Menu, X, ArrowLeft
+  LayoutDashboard, Home, PlusCircle, Inbox, MessageCircle, BarChart2,
+  Bookmark, Sparkles, Settings, LogOut, Camera, Save, Menu, X
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -14,10 +14,24 @@ import { logout } from "../redux/features/auth/authSlice";
 import { useGetMeQuery } from "../redux/features/auth/authApi";
 import { useUpdateUserMutation } from "../redux/features/user/userApi";
 
-const sidebarItems = [
-  { icon: ArrowLeft, label: "Back to Dashboard", link: true },
-  { icon: Settings, label: "Account Settings" },
-  { icon: LogOut, label: "Logout" },
+const listerNavItems = [
+  { icon: LayoutDashboard, label: "Dashboard", path: "/lister" },
+  { icon: Home, label: "My Listings", path: "/lister?tab=My%20Listings" },
+  { icon: PlusCircle, label: "Add New Listing", path: "/add-listing" },
+  { icon: Inbox, label: "Inquiries", path: "/lister?tab=Inquiries" },
+  { icon: MessageCircle, label: "Messages", path: "/messages" },
+  { icon: BarChart2, label: "Analytics", path: "/lister?tab=Analytics" },
+  { icon: Settings, label: "Account Settings", path: "/settings" },
+  { icon: LogOut, label: "Logout", path: "/" },
+];
+
+const seekerNavItems = [
+  { icon: LayoutDashboard, label: "Dashboard", path: "/seeker" },
+  { icon: Bookmark, label: "Saved Listings", path: "/saved-listings" },
+  { icon: MessageCircle, label: "My Chats", path: "/messages" },
+  { icon: Sparkles, label: "AI Chat History", path: "/ai-history" },
+  { icon: Settings, label: "Account Settings", path: "/settings" },
+  { icon: LogOut, label: "Logout", path: "/" },
 ];
 
 export function AccountSettingsPage() {
@@ -40,9 +54,8 @@ export function AccountSettingsPage() {
   const { refetch } = useGetMeQuery();
   const [updateUser, { isLoading: saving, error: saveError }] = useUpdateUserMutation();
 
-  const dashboardPath = useMemo(() => {
-    if (user?.role === "LISTER") return "/lister";
-    return "/seeker";
+  const sidebarItems = useMemo(() => {
+    return user?.role === "LISTER" ? listerNavItems : seekerNavItems;
   }, [user?.role]);
 
   const displayName = user?.name || "User";
@@ -126,43 +139,32 @@ export function AccountSettingsPage() {
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-1">
-          {sidebarItems.map((n) => {
-            if (n.link) {
-              return (
-                <Link
-                  key={n.label}
-                  href={dashboardPath}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-                >
-                  <n.icon className="w-4 h-4" />
-                  {n.label}
-                </Link>
-              );
-            }
-            return (
-              <button
-                key={n.label}
-                onClick={() => {
-                  if (n.label === "Logout") {
-                    handleLogout();
-                  }
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
-                  n.label === "Account Settings"
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-                }`}
-              >
-                <n.icon className="w-4 h-4" />
-                {n.label}
-              </button>
-            );
-          })}
+          {sidebarItems.map((n) => (
+            <Link
+              key={n.label}
+              href={n.path}
+              onClick={(event) => {
+                setSidebarOpen(false);
+                if (n.label === "Logout") {
+                  event.preventDefault();
+                  handleLogout();
+                }
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                n.label === "Account Settings"
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              }`}
+            >
+              <n.icon className="w-4 h-4" />
+              {n.label}
+            </Link>
+          ))}
         </nav>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="max-w-2xl mx-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <div className="w-full">
           <BackButton />
           <h1 className="text-2xl font-bold tracking-tight mb-1">Account Settings</h1>
           <p className="text-sm text-muted-foreground mb-8">Manage your profile and account preferences</p>

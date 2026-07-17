@@ -19,6 +19,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     "/edit-listing",
     "/ai-history",
     "/saved-listings",
+    "/search",
   ];
   const useFullWidth = fullLayoutPrefixes.some((p) => pathname.startsWith(p));
 

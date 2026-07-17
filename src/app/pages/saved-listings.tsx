@@ -123,8 +123,8 @@ export function SavedListingsPage() {
         </nav>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 flex justify-center">
-        <div className="w-full max-w-5xl mx-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <div className="w-full">
           <div className="mb-6">
             <button
               onClick={() => router.back()}

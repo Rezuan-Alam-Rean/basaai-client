@@ -1,20 +1,35 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Search, MoreVertical, Paperclip, Smile, Send, MapPin, X, ArrowLeft
+  Search, MoreVertical, Paperclip, Smile, Send, MapPin, X, ArrowLeft, Pencil, Trash2, Check
 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useAppSelector } from "../redux/hooks";
+import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import { 
+  messagingApi,
   useGetConversationsQuery, 
   useGetMessagesQuery, 
+  useMarkConversationReadMutation,
   useSendMessageMutation,
+  useUpdateMessageMutation,
+  useDeleteMessageMutation,
+  useDeleteConversationMutation,
   useLazyGetConversationWithQuery
 } from "../redux/features/chat/messagingApi";
+import {
+  decrementUnreadMessages,
+  incrementUnreadMessages,
+} from "../redux/features/notifications/notificationSlice";
 import { useGetListingQuery } from "../redux/features/listing/listingApi";
 import { getSocket } from "@/lib/socket";
 
@@ -77,6 +92,7 @@ function TypingDots({ label }: { label?: string }) {
 
 export function MessagingPage() {
   const user = useAppSelector((state) => state.auth.user);
+  const dispatch = useAppDispatch();
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [selectedConvo, setSelectedConvo] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageItem[]>([]);
@@ -85,6 +101,10 @@ export function MessagingPage() {
   const [pendingPreviews, setPendingPreviews] = useState<string[]>([]);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState("");
+  const [messageActionId, setMessageActionId] = useState<string | null>(null);
+  const [conversationActionId, setConversationActionId] = useState<string | null>(null);
   const [typingByConversation, setTypingByConversation] = useState<Record<string, boolean>>({});
   const [presenceByUser, setPresenceByUser] = useState<Record<string, boolean>>({});
   const [showConvoList, setShowConvoList] = useState(false);
@@ -97,6 +117,8 @@ export function MessagingPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const pendingMessagesRef = useRef<Record<string, MessageItem[]>>({});
+  const unreadByConversationRef = useRef<Record<string, number>>({});
+  const deletedConversationsRef = useRef<Set<string>>(new Set());
   const emojiList = ["😀", "😁", "😂", "🤣", "😊", "😍", "😘", "😎", "🤔", "😴", "😭", "😡", "👍", "🙏", "🎉", "❤️", "🔥", "✅", "📎", "🏠"];
   
   const listingId = searchParams.get("listingId");
@@ -127,9 +149,149 @@ export function MessagingPage() {
     selectedConvoRef.current = selectedConvo;
   }, [selectedConvo]);
 
+  useEffect(() => {
+    unreadByConversationRef.current = conversations.reduce<Record<string, number>>(
+      (acc, conversation) => {
+        acc[conversation.id] = conversation.unreadCount || 0;
+        return acc;
+      },
+      {}
+    );
+  }, [conversations]);
+
   const { data: conversationsData } = useGetConversationsQuery();
   const [getConversationWith] = useLazyGetConversationWithQuery();
   const [sendMessage] = useSendMessageMutation();
+  const [updateMessage] = useUpdateMessageMutation();
+  const [deleteMessage] = useDeleteMessageMutation();
+  const [deleteConversation] = useDeleteConversationMutation();
+  const [markConversationRead] = useMarkConversationReadMutation();
+
+  const applyConversationPayload = useCallback((conversation: any, unreadDelta = 0) => {
+    if (!conversation?.id || !user?.id) return;
+
+    const otherUser = conversation.user1Id === user.id
+      ? conversation.user2
+      : conversation.user1;
+
+    setConversations((prev) => {
+      const existing = prev.find((c) => c.id === conversation.id);
+      const nextConversation = {
+        id: conversation.id,
+        otherUser,
+        lastMessageText: conversation.lastMessageText,
+        lastMessageAt: conversation.lastMessageAt,
+        lastSenderId: conversation.lastSenderId,
+        unreadCount: Math.max(0, (existing?.unreadCount || 0) + unreadDelta),
+      };
+
+      return [
+        nextConversation,
+        ...prev.filter((c) => c.id !== conversation.id),
+      ].sort(
+        (a, b) =>
+          new Date(b.lastMessageAt || 0).getTime() -
+          new Date(a.lastMessageAt || 0).getTime()
+      );
+    });
+
+    dispatch(
+      messagingApi.util.updateQueryData("getConversations", undefined, (draft: any) => {
+        if (!draft?.conversations) return;
+
+        const existing = draft.conversations.find((item: any) => item.id === conversation.id);
+        const nextConversation = {
+          id: conversation.id,
+          otherUser,
+          lastMessageText: conversation.lastMessageText,
+          lastMessageAt: conversation.lastMessageAt,
+          lastSenderId: conversation.lastSenderId,
+          unreadCount: Math.max(0, (existing?.unreadCount || 0) + unreadDelta),
+        };
+
+        draft.conversations = [
+          nextConversation,
+          ...draft.conversations.filter((item: any) => item.id !== conversation.id),
+        ].sort(
+          (a: any, b: any) =>
+            new Date(b.lastMessageAt || 0).getTime() -
+            new Date(a.lastMessageAt || 0).getTime()
+        );
+      })
+    );
+  }, [dispatch, user?.id]);
+
+  const applyUpdatedMessage = useCallback((payload: any) => {
+    const message = payload?.message as MessageItem | undefined;
+    const conversation = payload?.conversation;
+    if (!message || !conversation) return;
+
+    setMessages((prev) =>
+      prev.map((item) => (item.id === message.id ? { ...item, ...message } : item))
+    );
+    const pending = pendingMessagesRef.current[message.conversationId] || [];
+    pendingMessagesRef.current[message.conversationId] = pending.map((item) =>
+      item.id === message.id ? { ...item, ...message } : item
+    );
+    applyConversationPayload(conversation);
+  }, [applyConversationPayload]);
+
+  const applyDeletedMessage = useCallback((payload: any) => {
+    const messageId = payload?.messageId as string | undefined;
+    const conversationId = payload?.conversationId as string | undefined;
+    const conversation = payload?.conversation;
+    if (!messageId || !conversationId || !conversation) return;
+
+    setMessages((prev) => prev.filter((item) => item.id !== messageId));
+    pendingMessagesRef.current[conversationId] = (
+      pendingMessagesRef.current[conversationId] || []
+    ).filter((item) => item.id !== messageId);
+    const shouldDecrementUnread =
+      payload?.recipientId === user?.id &&
+      Boolean(payload?.wasUnread) &&
+      (unreadByConversationRef.current[conversationId] || 0) > 0;
+
+    applyConversationPayload(conversation, shouldDecrementUnread ? -1 : 0);
+    if (shouldDecrementUnread) {
+      dispatch(decrementUnreadMessages(1));
+    }
+  }, [applyConversationPayload, dispatch, user?.id]);
+
+  const applyDeletedConversation = useCallback((payload: any) => {
+    const conversationId = payload?.conversationId as string | undefined;
+    if (!conversationId) return;
+    if (deletedConversationsRef.current.has(conversationId)) return;
+    deletedConversationsRef.current.add(conversationId);
+
+    const unreadCount = Number(payload?.unreadCountsByUser?.[user?.id || ""] || 0);
+    const nextConversations = conversations.filter((conversation) => conversation.id !== conversationId);
+
+    setConversations(nextConversations);
+    dispatch(
+      messagingApi.util.updateQueryData("getConversations", undefined, (draft: any) => {
+        if (!draft?.conversations) return;
+        draft.conversations = draft.conversations.filter(
+          (conversation: any) => conversation.id !== conversationId
+        );
+      })
+    );
+
+    if (unreadCount > 0) {
+      dispatch(decrementUnreadMessages(unreadCount));
+    }
+
+    if (selectedConvoRef.current === conversationId) {
+      const nextSelected = nextConversations[0]?.id || null;
+      setSelectedConvo(nextSelected);
+      if (!nextSelected) {
+        setMessages([]);
+      }
+      setEditingMessageId(null);
+      setEditingText("");
+      setShowContext(false);
+    }
+    delete pendingMessagesRef.current[conversationId];
+  }, [conversations, dispatch, user?.id]);
 
   useEffect(() => {
     if (conversationsData?.conversations) {
@@ -186,9 +348,7 @@ export function MessagingPage() {
     socket.connect();
     socketRef.current = socket;
 
-    socket.emit("presence:active", { isActive: true });
-
-    socket.on("message:new", (payload) => {
+    const handleNewMessage = (payload: any) => {
       const conversation = payload?.conversation as {
         id: string;
         user1: { id: string; name: string; avatarUrl?: string | null };
@@ -206,10 +366,14 @@ export function MessagingPage() {
       const otherUser = conversation.user1Id === user?.id
         ? conversation.user2
         : conversation.user1;
+      const isIncomingUnread =
+        message.recipientId === user?.id && selectedConvoRef.current !== conversation.id;
+      const shouldClearUnread =
+        message.recipientId === user?.id && selectedConvoRef.current === conversation.id;
+      const unreadDelta = isIncomingUnread ? 1 : 0;
 
       setConversations((prev) => {
         const existing = prev.find((c) => c.id === conversation.id);
-        const unreadDelta = message.recipientId === user?.id && selectedConvoRef.current !== conversation.id ? 1 : 0;
         
         // Prevent duplicate conversations in the list
         const updated = existing
@@ -221,7 +385,7 @@ export function MessagingPage() {
                     lastMessageText: conversation.lastMessageText,
                     lastMessageAt: conversation.lastMessageAt,
                     lastSenderId: conversation.lastSenderId,
-                    unreadCount: c.id === conversation.id ? c.unreadCount + unreadDelta : c.unreadCount,
+                    unreadCount: shouldClearUnread ? 0 : c.unreadCount + unreadDelta,
                   }
                 : c
             )
@@ -242,6 +406,31 @@ export function MessagingPage() {
         );
       });
 
+      dispatch(
+        messagingApi.util.updateQueryData("getConversations", undefined, (draft: any) => {
+          if (!draft?.conversations) return;
+
+          const existing = draft.conversations.find((item: any) => item.id === conversation.id);
+          const nextConversation = {
+            id: conversation.id,
+            otherUser,
+            lastMessageText: conversation.lastMessageText,
+            lastMessageAt: conversation.lastMessageAt,
+            lastSenderId: conversation.lastSenderId,
+            unreadCount: shouldClearUnread ? 0 : (existing?.unreadCount || 0) + unreadDelta,
+          };
+
+          draft.conversations = [
+            nextConversation,
+            ...draft.conversations.filter((item: any) => item.id !== conversation.id),
+          ].sort(
+            (a: any, b: any) =>
+              new Date(b.lastMessageAt || 0).getTime() -
+              new Date(a.lastMessageAt || 0).getTime()
+          );
+        })
+      );
+
       // Store message in pending for this conversation
       if (!pendingMessagesRef.current[conversation.id]) {
         pendingMessagesRef.current[conversation.id] = [];
@@ -258,15 +447,30 @@ export function MessagingPage() {
           if (prev.some(m => m.id === message.id)) return prev;
           return [...prev, message];
         });
+        if (message.recipientId === user?.id) {
+          const previousUnread = unreadByConversationRef.current[conversation.id] || 0;
+          if (previousUnread > 0) {
+            dispatch(decrementUnreadMessages(previousUnread));
+          }
+          markConversationRead(conversation.id).unwrap().catch(() => undefined);
+          dispatch(
+            messagingApi.util.updateQueryData("getConversations", undefined, (draft: any) => {
+              const item = draft?.conversations?.find((entry: any) => entry.id === conversation.id);
+              if (item) item.unreadCount = 0;
+            })
+          );
+        }
+      } else if (unreadDelta > 0) {
+        dispatch(incrementUnreadMessages(unreadDelta));
       }
 
       setTypingByConversation((prev) => ({
         ...prev,
         [conversation.id]: false,
       }));
-    });
+    };
 
-    socket.on("typing", (payload) => {
+    const handleTyping = (payload: any) => {
       const conversationId = payload?.conversationId as string | undefined;
       const isTyping = Boolean(payload?.isTyping);
       if (!conversationId) return;
@@ -276,9 +480,9 @@ export function MessagingPage() {
       }));
       if (conversationId !== selectedConvoRef.current) return;
       setIsOtherTyping(isTyping);
-    });
+    };
 
-    socket.on("presence", (payload) => {
+    const handlePresence = (payload: any) => {
       const userId = payload?.userId as string | undefined;
       const status = payload?.status as "online" | "offline" | undefined;
       if (!userId || !status) return;
@@ -286,17 +490,25 @@ export function MessagingPage() {
         ...prev,
         [userId]: status === "online",
       }));
-    });
+    };
+
+    socket.on("message:new", handleNewMessage);
+    socket.on("message:updated", applyUpdatedMessage);
+    socket.on("message:deleted", applyDeletedMessage);
+    socket.on("conversation:deleted", applyDeletedConversation);
+    socket.on("typing", handleTyping);
+    socket.on("presence", handlePresence);
 
     return () => {
-      socket.emit("presence:active", { isActive: false });
-      socket.off("message:new");
-      socket.off("typing");
-      socket.off("presence");
-      socket.disconnect();
+      socket.off("message:new", handleNewMessage);
+      socket.off("message:updated", applyUpdatedMessage);
+      socket.off("message:deleted", applyDeletedMessage);
+      socket.off("conversation:deleted", applyDeletedConversation);
+      socket.off("typing", handleTyping);
+      socket.off("presence", handlePresence);
       socketRef.current = null;
     };
-  }, [user?.id]);
+  }, [applyDeletedConversation, applyDeletedMessage, applyUpdatedMessage, dispatch, markConversationRead, user?.id]);
 
   useEffect(() => {
     document.body.classList.add("floating-chat-left");
@@ -314,6 +526,10 @@ export function MessagingPage() {
 
   useEffect(() => {
     if (messagesData?.messages) {
+      const selectedUnreadCount = selectedConvo
+        ? unreadByConversationRef.current[selectedConvo] || 0
+        : 0;
+
       // Merge API messages with any pending messages from socket
       const pendingForConvo = pendingMessagesRef.current[selectedConvo || ""] || [];
       const merged = [...messagesData.messages];
@@ -331,6 +547,15 @@ export function MessagingPage() {
       );
       
       setMessages(merged);
+      if (selectedConvo && selectedUnreadCount > 0) {
+        dispatch(decrementUnreadMessages(selectedUnreadCount));
+        dispatch(
+          messagingApi.util.updateQueryData("getConversations", undefined, (draft: any) => {
+            const item = draft?.conversations?.find((entry: any) => entry.id === selectedConvo);
+            if (item) item.unreadCount = 0;
+          })
+        );
+      }
       setConversations((prev) =>
         prev.map((c) => (c.id === selectedConvo ? { ...c, unreadCount: 0 } : c))
       );
@@ -340,10 +565,12 @@ export function MessagingPage() {
         pendingMessagesRef.current[selectedConvo] = [];
       }
     }
-  }, [messagesData, selectedConvo]);
+  }, [dispatch, messagesData, selectedConvo]);
 
   useEffect(() => {
     setIsOtherTyping(false);
+    setEditingMessageId(null);
+    setEditingText("");
     setTypingByConversation((prev) => ({
       ...prev,
       [selectedConvo || ""]: false,
@@ -400,6 +627,62 @@ export function MessagingPage() {
       typingTimeoutRef.current = null;
     }, 1500);
   }, [msgInput, selectedConversation]);
+
+  const startEditMessage = (message: MessageItem) => {
+    if (message.senderId !== user?.id || !message.text) return;
+    setEditingMessageId(message.id);
+    setEditingText(message.text || "");
+  };
+
+  const cancelEditMessage = () => {
+    setEditingMessageId(null);
+    setEditingText("");
+  };
+
+  const handleSaveEdit = async () => {
+    const text = editingText.trim();
+    if (!editingMessageId || !text) return;
+
+    try {
+      setMessageActionId(editingMessageId);
+      const response = await updateMessage({ messageId: editingMessageId, text }).unwrap();
+      applyUpdatedMessage(response);
+      cancelEditMessage();
+    } catch {
+      // Keep the edit field open so the user can retry.
+    } finally {
+      setMessageActionId(null);
+    }
+  };
+
+  const handleDeleteMessage = async (messageId: string) => {
+    try {
+      setMessageActionId(messageId);
+      const response = await deleteMessage(messageId).unwrap();
+      applyDeletedMessage(response);
+      if (editingMessageId === messageId) {
+        cancelEditMessage();
+      }
+    } catch {
+      // Ignore failed delete; the message stays visible.
+    } finally {
+      setMessageActionId(null);
+    }
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!selectedConversation?.id) return;
+
+    try {
+      setConversationActionId(selectedConversation.id);
+      const response = await deleteConversation(selectedConversation.id).unwrap();
+      applyDeletedConversation(response);
+    } catch {
+      // Keep the conversation visible if deletion fails.
+    } finally {
+      setConversationActionId(null);
+    }
+  };
 
   const handleSend = async () => {
     const text = msgInput.trim();
@@ -534,18 +817,42 @@ export function MessagingPage() {
               {selectedConversation?.lastMessageText ? `Re: ${selectedConversation.lastMessageText}` : "Re: Conversation"}
             </p>
           </div>
-          <button className="p-1.5 rounded hover:bg-accent transition-colors lg:hidden" onClick={() => setShowContext(!showContext)}>
-            <MoreVertical className="w-4 h-4 text-muted-foreground" />
-          </button>
-          <button className="p-1.5 rounded hover:bg-accent transition-colors hidden lg:block">
-            <MoreVertical className="w-4 h-4 text-muted-foreground" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1.5 rounded hover:bg-accent transition-colors"
+                disabled={!selectedConversation || Boolean(conversationActionId)}
+                aria-label="Conversation actions"
+              >
+                <MoreVertical className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuItem
+                className="lg:hidden"
+                onClick={() => setShowContext(true)}
+              >
+                View details
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={handleDeleteConversation}
+                disabled={!selectedConversation || Boolean(conversationActionId)}
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete conversation
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           {messages.map((m) => {
             const isSent = m.senderId === user?.id;
+            const isEditing = editingMessageId === m.id;
+            const isBusy = messageActionId === m.id;
+            const canEditMessage = isSent && Boolean(m.text);
             return (
               <div key={m.id} className={`flex ${isSent ? "justify-end" : "justify-start"}`}>
                 <div className={`max-w-[85%] md:max-w-[70%] ${
@@ -556,7 +863,43 @@ export function MessagingPage() {
                   <p className={`text-[10px] mb-0.5 ${isSent ? "text-primary-foreground/60" : "text-muted-foreground"}`}>
                     {isSent ? (user?.name || "Me") : (selectedConversation?.otherUser.name || "User")}
                   </p>
-                  {m.text && <p className="text-sm">{m.text}</p>}
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <Input
+                        value={editingText}
+                        onChange={(event) => setEditingText(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") handleSaveEdit();
+                          if (event.key === "Escape") cancelEditMessage();
+                        }}
+                        className="h-8 min-w-[220px] bg-background text-foreground"
+                        disabled={isBusy}
+                        autoFocus
+                      />
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={handleSaveEdit}
+                          disabled={isBusy || editingText.trim().length === 0}
+                          className="p-1 rounded hover:bg-primary-foreground/15 disabled:opacity-50"
+                          title="Save"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cancelEditMessage}
+                          disabled={isBusy}
+                          className="p-1 rounded hover:bg-primary-foreground/15 disabled:opacity-50"
+                          title="Cancel"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    m.text && <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>
+                  )}
                   {m.attachments && m.attachments.length > 0 && (
                     <div className="mt-2 space-y-2">
                       {m.attachments.map((att) => (
@@ -582,9 +925,40 @@ export function MessagingPage() {
                       ))}
                     </div>
                   )}
-                  <p className={`text-[10px] mt-1 ${isSent ? "text-primary-foreground/50" : "text-muted-foreground"}`}>
-                    {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </p>
+                  <div className="mt-1 flex items-center justify-between gap-3">
+                    <p className={`text-[10px] ${isSent ? "text-primary-foreground/50" : "text-muted-foreground"}`}>
+                      {new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </p>
+                    {isSent && !isEditing && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            className="p-1 rounded text-primary-foreground/60 hover:bg-primary-foreground/15 hover:text-primary-foreground disabled:opacity-50"
+                            aria-label="Message actions"
+                          >
+                            <MoreVertical className="w-3.5 h-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-36">
+                          {canEditMessage && (
+                            <DropdownMenuItem onClick={() => startEditMessage(m)}>
+                              <Pencil className="w-4 h-4" />
+                              Edit
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={() => handleDeleteMessage(m.id)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </div>
               </div>
             );

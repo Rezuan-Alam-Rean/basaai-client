@@ -1,15 +1,18 @@
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Sparkles, Mail, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import { useLoginMutation, useGoogleAuthMutation } from "../redux/features/auth/authApi";
+import { setUser } from "../redux/features/auth/authSlice";
 import { GoogleLogin } from "@react-oauth/google";
 import { toast } from "sonner";
 
 export function LoginPage() {
+
+  const searchParams = useSearchParams();
   const [mounted, setMounted] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [formData, setFormData] = useState({
@@ -29,6 +32,25 @@ export function LoginPage() {
   const { loading } = useAppSelector((state) => state.auth);
   const isLoading = isLoginLoading || isGoogleLoading || loading;
 
+  const getRedirectPath = (user: any) => {
+    const redirect = searchParams.get("redirect");
+    if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) {
+      return redirect;
+    }
+
+    return user?.role === "LISTER" ? "/lister" : "/seeker";
+  };
+
+  const persistAuthAndRedirect = (result: any) => {
+    const user = result.user || result;
+    if (result.token) {
+      localStorage.setItem("token", result.token);
+    }
+    dispatch(setUser(user));
+    router.replace(getRedirectPath(user));
+    router.refresh();
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
       ...prev,
@@ -45,13 +67,8 @@ export function LoginPage() {
 
     try {
       const result = await login(formData).unwrap();
-      const user = result.user || result;
       toast.success("Successfully logged in!");
-      if (user.role === 'LISTER') {
-        router.push("/lister");
-      } else {
-        router.push("/seeker");
-      }
+      persistAuthAndRedirect(result);
     } catch (err: any) {
       toast.error(err?.data?.message || "Failed to log in");
     }
@@ -61,13 +78,8 @@ export function LoginPage() {
     if (credentialResponse.credential) {
       try {
         const result = await googleAuth({ idToken: credentialResponse.credential }).unwrap();
-        const user = result.user || result;
         toast.success("Successfully logged in with Google!");
-        if (user.role === 'LISTER') {
-          router.push("/lister");
-        } else {
-          router.push("/seeker");
-        }
+        persistAuthAndRedirect(result);
       } catch (err: any) {
         toast.error(err?.data?.message || "Google login failed");
       }
@@ -164,6 +176,7 @@ export function LoginPage() {
             Don't have an account?{" "}
             <Link href="/signup" className="text-primary hover:underline font-semibold transition-all">Get Started</Link>
           </p>
+          
         </form>
       </div>
     </div>

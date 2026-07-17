@@ -1,16 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, CircleMarker, MapContainer, Marker, Popup, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { MapPin, Plus, Minus, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, MapPin, Plus, Minus, Search } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useGetListingQuery, useGetNearbyListingsQuery } from "../redux/features/listing/listingApi";
+import { useGetListingQuery, useGetListingsQuery, useGetNearbyListingsQuery } from "../redux/features/listing/listingApi";
+import { toast } from "sonner";
 
 const markerIcon2x = new URL("leaflet/dist/images/marker-icon-2x.png", import.meta.url).toString();
 const markerIcon = new URL("leaflet/dist/images/marker-icon.png", import.meta.url).toString();
@@ -24,6 +25,26 @@ L.Icon.Default.mergeOptions({
   shadowUrl: markerShadow,
 });
 
+function createMapPinIcon(color: string) {
+  return L.divIcon({
+    className: "",
+    html: `
+      <div style="position: relative; width: 30px; height: 42px;">
+        <svg width="30" height="42" viewBox="0 0 30 42" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M15 0C6.72 0 0 6.72 0 15C0 26.25 15 42 15 42C15 42 30 26.25 30 15C30 6.72 23.28 0 15 0Z" fill="${color}"/>
+          <circle cx="15" cy="15" r="5.5" fill="white"/>
+        </svg>
+      </div>
+    `,
+    iconSize: [30, 42],
+    iconAnchor: [15, 42],
+    popupAnchor: [0, -38],
+  });
+}
+
+const mainLocationIcon = createMapPinIcon("#16a34a");
+const nearbyLocationIcon = createMapPinIcon("#3b82f6");
+
 const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:4000/api/v1";
 
 const radiusOptions = [
@@ -32,6 +53,7 @@ const radiusOptions = [
   { label: "2km", value: 2 },
   { label: "5km", value: 5 },
 ];
+const allListingsPageSize = 8;
 
 type MapCenter = { lat: number; lng: number };
 const defaultCenter: MapCenter = { lat: 23.8103, lng: 90.4125 };
@@ -77,15 +99,76 @@ function MapZoomControls() {
   );
 }
 
+function ListingPopupContent({ listing }: { listing: any }) {
+  return (
+    <div className="w-52 space-y-2">
+      <div>
+        <p className="text-xs font-semibold leading-snug">{listing.title}</p>
+        <p className="text-[11px] text-muted-foreground">{listing.location}, {listing.city || "Dhaka"}</p>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <Badge variant="secondary" className="text-[10px]">{listing.propertyType || "Listing"}</Badge>
+        <p className="text-sm font-bold">৳{listing.price.toLocaleString()}/mo</p>
+      </div>
+      {Array.isArray(listing.amenities) && listing.amenities.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {listing.amenities.slice(0, 3).map((item: string) => (
+            <Badge key={item} variant="outline" className="text-[10px] px-1.5 py-0">
+              {item}
+            </Badge>
+          ))}
+        </div>
+      )}
+      <Link href={`/listing/${listing.id}`} className="inline-flex text-xs text-primary underline">
+        View full details
+      </Link>
+    </div>
+  );
+}
+
+function ListingMarker({
+  listing,
+  active,
+  onActivate,
+}: {
+  listing: any;
+  active: boolean;
+  onActivate: () => void;
+}) {
+  const markerRef = useRef<L.Marker | null>(null);
+
+  useEffect(() => {
+    if (active) {
+      markerRef.current?.openPopup();
+    }
+  }, [active]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={[listing.latitude, listing.longitude]}
+      icon={active ? mainLocationIcon : nearbyLocationIcon}
+      eventHandlers={{
+        click: onActivate,
+      }}
+    >
+      <Popup>
+        <ListingPopupContent listing={listing} />
+      </Popup>
+    </Marker>
+  );
+}
+
 export function MapViewPage() {
   const params = useSearchParams();
   const listingId = params.get("listingId");
   const [center, setCenter] = useState<MapCenter>(defaultCenter);
   const [activeRadius, setActiveRadius] = useState(radiusOptions[2]);
+  const [showAllListings, setShowAllListings] = useState(true);
+  const [allListingsPage, setAllListingsPage] = useState(1);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [mapType, setMapType] = useState<"map" | "satellite">("map");
   const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
   const [landmarks, setLandmarks] = useState<Landmark[]>([]);
   const [activeListingId, setActiveListingId] = useState<string | null>(null);
 
@@ -96,19 +179,67 @@ export function MapViewPage() {
     if (listingFromQuery?.latitude != null && listingFromQuery?.longitude != null) {
       setCenter({ lat: listingFromQuery.latitude, lng: listingFromQuery.longitude });
       setActiveListingId(listingFromQuery.id);
+    } else if (listingFromQuery && listingId) {
+      setActiveListingId(listingFromQuery.id);
+      toast.warning("This listing is not located on the map yet.");
     }
-  }, [listingFromQuery]);
+  }, [listingFromQuery, listingId]);
 
   const { data: nearbyData, isLoading: loadingNearby } = useGetNearbyListingsQuery(
     { lat: center.lat, lng: center.lng, radiusKm: activeRadius.value },
-    { skip: !center }
+    { skip: !center || showAllListings }
+  );
+  const { data: allListingsData, isLoading: loadingAllListings } = useGetListingsQuery(
+    { page: allListingsPage, limit: allListingsPageSize, sortBy: "newest" },
+    { skip: !showAllListings }
   );
 
-  const listings = (nearbyData?.listings || []).filter((l: any) => l.latitude != null && l.longitude != null);
+  const rawListings = showAllListings ? allListingsData?.listings || [] : nearbyData?.listings || [];
+  const listings = rawListings || [];
+  const filteredListings = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return listings;
+
+    return listings.filter((listing: any) => {
+      const searchableText = [
+        listing.title,
+        listing.location,
+        listing.city,
+        listing.address,
+        listing.propertyType,
+        ...(Array.isArray(listing.amenities) ? listing.amenities : []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return searchableText.includes(normalizedQuery);
+    });
+  }, [listings, query]);
+  const mappableListings = listings.filter((l: any) => l.latitude != null && l.longitude != null);
+  const displayedMappableListings = useMemo(() => {
+    if (listingFromQuery?.latitude == null || listingFromQuery?.longitude == null) {
+      return mappableListings;
+    }
+
+    const exists = mappableListings.some((listing: any) => listing.id === listingFromQuery.id);
+    return exists ? mappableListings : [listingFromQuery, ...mappableListings];
+  }, [listingFromQuery, mappableListings]);
+  const allListingsPagination = allListingsData?.pagination || {
+    total: 0,
+    page: allListingsPage,
+    limit: allListingsPageSize,
+    totalPages: 0,
+  };
+  const loadingListings = showAllListings ? loadingAllListings : loadingNearby;
 
   useEffect(() => {
     let cancelled = false;
     const fetchLandmarks = async () => {
+      if (showAllListings) {
+        setLandmarks([]);
+        return;
+      }
       const radiusMeters = Math.round(activeRadius.value * 1000);
       const url = `${apiBase}/map/landmarks?lat=${center.lat}&lng=${center.lng}&radius=${radiusMeters}`;
       const res = await fetch(url);
@@ -119,23 +250,10 @@ export function MapViewPage() {
     };
     fetchLandmarks().catch(() => setLandmarks([]));
     return () => { cancelled = true; };
-  }, [center.lat, center.lng, activeRadius.value]);
+  }, [center.lat, center.lng, activeRadius.value, showAllListings]);
 
   const handleSearch = async () => {
-    if (!query.trim()) return;
-    setSearching(true);
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&countrycodes=bd&q=${encodeURIComponent(query)}&limit=1`
-      );
-      const data = (await res.json()) as Array<{ lat: string; lon: string }>;
-      if (data.length > 0) {
-        setCenter({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
-        setActiveListingId(null);
-      }
-    } finally {
-      setSearching(false);
-    }
+    setActiveListingId(null);
   };
 
   return (
@@ -160,12 +278,26 @@ export function MapViewPage() {
             />
           </div>
           <div className="flex gap-1.5 flex-wrap">
+            <button
+              onClick={() => {
+                setShowAllListings(true);
+                setAllListingsPage(1);
+              }}
+              className={`px-3 py-1 rounded-md text-xs transition-colors ${
+                showAllListings ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              All
+            </button>
             {radiusOptions.map((r) => (
               <button
                 key={r.label}
-                onClick={() => setActiveRadius(r)}
+                onClick={() => {
+                  setShowAllListings(false);
+                  setActiveRadius(r);
+                }}
                 className={`px-3 py-1 rounded-md text-xs transition-colors ${
-                  activeRadius.value === r.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
+                  !showAllListings && activeRadius.value === r.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
                 }`}
               >
                 {r.label}
@@ -173,17 +305,30 @@ export function MapViewPage() {
             ))}
           </div>
           <p className="text-xs text-muted-foreground">
-            {loadingNearby ? "Loading listings..." : `${listings.length} listings found nearby`}
+            {loadingListings
+              ? "Loading listings..."
+              : showAllListings
+                ? query.trim()
+                  ? `${filteredListings.length} of ${allListingsPagination.total || 0} available listings`
+                  : `${allListingsPagination.total || 0} available listings`
+                : query.trim()
+                  ? `${filteredListings.length} of ${listings.length} listings shown nearby`
+                  : `${listings.length} listings found nearby`}
           </p>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {listings.map((l: any) => (
+          {filteredListings.map((l: any) => (
             <button
               key={l.id}
               onClick={() => {
-                setCenter({ lat: l.latitude, lng: l.longitude });
-                setActiveListingId(l.id);
-                setSidebarOpen(false);
+                if (l.latitude != null && l.longitude != null) {
+                  setCenter({ lat: l.latitude, lng: l.longitude });
+                  setActiveListingId(l.id);
+                  setSidebarOpen(false);
+                } else {
+                  setActiveListingId(l.id);
+                  toast.warning("This listing is not located on the map yet.");
+                }
               }}
               className={`w-full text-left p-3 border-b border-border/50 hover:bg-accent/50 transition-colors ${
                 activeListingId === l.id ? "bg-accent" : ""
@@ -193,10 +338,20 @@ export function MapViewPage() {
                 <Badge variant="secondary" className="text-[10px]">{l.propertyType || "Listing"}</Badge>
                 <span className="text-sm font-bold">৳{l.price.toLocaleString()}</span>
               </div>
+              <p className="text-sm font-semibold leading-snug line-clamp-2 mb-1">
+                {l.title}
+              </p>
               <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1.5">
                 <MapPin className="w-3 h-3" />
                 {l.location}, {l.city || "Dhaka"}
               </div>
+              {(l.latitude == null || l.longitude == null) && (
+                <div className="mb-1.5">
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-500/40 text-amber-700 dark:text-amber-300">
+                    Not located on map
+                  </Badge>
+                </div>
+              )}
               <div className="flex gap-1 flex-wrap">
                 {(l.amenities || []).slice(0, 3).map((f: string) => (
                   <Badge key={f} variant="outline" className="text-[10px] px-1.5 py-0">{f}</Badge>
@@ -204,7 +359,37 @@ export function MapViewPage() {
               </div>
             </button>
           ))}
+          {!loadingListings && filteredListings.length === 0 && (
+            <div className="p-6 text-center text-sm text-muted-foreground">
+              No listings match this search.
+            </div>
+          )}
         </div>
+        {showAllListings && allListingsPagination.totalPages > 1 && (
+          <div className="border-t border-border p-3 flex items-center justify-between gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+              disabled={allListingsPage <= 1 || loadingAllListings}
+              onClick={() => setAllListingsPage((page) => Math.max(1, page - 1))}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Page {allListingsPagination.page} of {allListingsPagination.totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 px-2"
+              disabled={allListingsPage >= allListingsPagination.totalPages || loadingAllListings}
+              onClick={() => setAllListingsPage((page) => Math.min(allListingsPagination.totalPages, page + 1))}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 relative bg-muted/30 overflow-hidden">
@@ -222,31 +407,29 @@ export function MapViewPage() {
           )}
 
           <MapFocus center={center} />
-          <Circle
-            center={[center.lat, center.lng]}
-            radius={activeRadius.value * 1000}
-            pathOptions={{ color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.08 }}
-          />
+          {!showAllListings && (
+            <Circle
+              center={[center.lat, center.lng]}
+              radius={activeRadius.value * 1000}
+              pathOptions={{ color: "#16a34a", fillColor: "#16a34a", fillOpacity: 0.08 }}
+            />
+          )}
 
-          {listings.map((l: any) => (
-            <Marker
-              key={l.id}
-              position={[l.latitude, l.longitude]}
-              eventHandlers={{
-                click: () => setActiveListingId(l.id),
-              }}
-            >
+          {!showAllListings && !activeListingId && (
+            <Marker position={[center.lat, center.lng]} icon={mainLocationIcon}>
               <Popup>
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold">{l.title}</p>
-                  <p className="text-xs text-muted-foreground">{l.location}, {l.city || "Dhaka"}</p>
-                  <p className="text-sm font-bold">৳{l.price.toLocaleString()}/mo</p>
-                  <Link href={`/listing/${l.id}`} className="text-xs text-primary underline">
-                    View details
-                  </Link>
-                </div>
+                <p className="text-xs font-semibold">Main location</p>
               </Popup>
             </Marker>
+          )}
+
+          {displayedMappableListings.map((l: any) => (
+            <ListingMarker
+              key={l.id}
+              listing={l}
+              active={activeListingId === l.id}
+              onActivate={() => setActiveListingId(l.id)}
+            />
           ))}
 
           {landmarks.map((lm) => (
@@ -254,7 +437,7 @@ export function MapViewPage() {
               key={lm.id}
               center={[lm.lat, lm.lng]}
               radius={5}
-              pathOptions={{ color: "#16a34a", fillColor: "#16a34a", fillOpacity: 0.6 }}
+              pathOptions={{ color: "#3b82f6", fillColor: "#3b82f6", fillOpacity: 0.6 }}
             >
               <Popup>
                 <div className="space-y-1">

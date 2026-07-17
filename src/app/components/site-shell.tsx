@@ -11,13 +11,14 @@ const noFooterPages = ["/map", "/seeker", "/lister", "/messages", "/chat", "/set
 export function SiteShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const showFooter = !noFooterPages.some((page) => pathname.startsWith(page));
+  const showFloatingChat = pathname !== "/";
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground">
       <Navbar />
       <main className="flex-1 flex flex-col">{children}</main>
       {showFooter ? <Footer /> : null}
-      <FloatingChatbot />
+      {showFloatingChat ? <FloatingChatbot /> : null}
     </div>
   );
 }

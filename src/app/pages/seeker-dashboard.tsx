@@ -190,8 +190,8 @@ export function SeekerDashboard() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="max-w-5xl mx-auto">
+      <main className="flex-1 min-w-0 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <div className="w-full">
           {/* Greeting */}
           <div className="mb-6">
             <h1 className="text-2xl font-bold tracking-tight">Good morning, {user?.name?.split(" ")[0] || "there"} <span role="img">👋</span></h1>

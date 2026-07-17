@@ -9,6 +9,7 @@ import { Input } from "../components/ui/input";
 import { useAppDispatch, useAppSelector } from "../redux/hooks";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { useRegisterMutation, useGoogleAuthMutation } from "../redux/features/auth/authApi";
+import { setUser } from "../redux/features/auth/authSlice";
 import { GoogleLogin } from "@react-oauth/google";
 import { toast } from "sonner";
 
@@ -51,6 +52,25 @@ export function SignupPage() {
   const { loading } = useAppSelector((state) => state.auth);
   const isLoading = isRegisterLoading || isGoogleLoading || loading;
 
+  const getRedirectPath = (user: any) => {
+    const redirect = searchParams.get("redirect");
+    if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) {
+      return redirect;
+    }
+
+    return user?.role === "LISTER" ? "/lister" : "/seeker";
+  };
+
+  const persistAuthAndRedirect = (result: any) => {
+    const user = result.user || result;
+    if (result.token) {
+      localStorage.setItem("token", result.token);
+    }
+    dispatch(setUser(user));
+    router.replace(getRedirectPath(user));
+    router.refresh();
+  };
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
       ...prev,
@@ -88,13 +108,8 @@ export function SignupPage() {
     if (credentialResponse.credential) {
       try {
         const result = await googleAuth({ idToken: credentialResponse.credential }).unwrap();
-        const user = result.user || result;
         toast.success("Successfully logged in with Google!");
-        if (user.role === "LISTER") {
-          router.push("/lister");
-        } else {
-          router.push("/seeker");
-        }
+        persistAuthAndRedirect(result);
       } catch (err: any) {
         toast.error(err?.data?.message || "Google login failed");
       }

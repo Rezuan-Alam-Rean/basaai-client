@@ -111,7 +111,7 @@ export function FloatingChatbot() {
                         <div className="grid gap-2">
                           {pageListings.map((l) => (
                             <div key={l.id} className="bg-background/60 rounded-lg border border-border/60 p-1">
-                              <ListingCard listing={l} compact />
+                              <ListingCard listing={l} chatCompact />
                             </div>
                           ))}
                         </div>

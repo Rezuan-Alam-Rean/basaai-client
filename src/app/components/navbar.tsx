@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Sparkles, Menu, X, Sun, Moon } from "lucide-react";
+import { Sparkles, Menu, X, Sun, Moon, MessageCircle } from "lucide-react";
 import { Button } from "./ui/button";
 import { useTheme } from "./theme-provider";
 import { useAppSelector, useAppDispatch } from "../redux/hooks";
@@ -20,7 +20,9 @@ export function Navbar() {
     setMounted(true);
   }, []);
   const { user } = useAppSelector((state) => state.auth);
+  const unreadMessages = useAppSelector((state) => state.notifications.unreadMessages);
   const dispatch = useAppDispatch();
+  const unreadLabel = unreadMessages > 99 ? "99+" : unreadMessages;
 
   const handleLogout = () => {
     dispatch(logout());
@@ -83,6 +85,21 @@ export function Navbar() {
                   </Button>
                 </Link>
               )}
+              <Link href="/messages">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="relative gap-1.5"
+                >
+                  <MessageCircle className="w-4 h-4" />
+                  Messages
+                  {unreadMessages > 0 && (
+                    <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                      {unreadLabel}
+                    </span>
+                  )}
+                </Button>
+              </Link>
               <Link href={user.role === 'LISTER' ? '/lister' : '/seeker'}>
                 <Button variant="ghost" size="sm">
                   Dashboard
@@ -145,6 +162,27 @@ export function Navbar() {
                 {l.label}
               </Link>
             ))}
+            {user && (
+              <Link
+                href="/messages"
+                onClick={() => setMobileOpen(false)}
+                className={`px-3 py-2 rounded-md text-sm transition-colors flex items-center justify-between ${
+                  pathname === "/messages"
+                    ? "text-foreground bg-accent"
+                    : "text-muted-foreground"
+                }`}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <MessageCircle className="w-4 h-4" />
+                  Messages
+                </span>
+                {unreadMessages > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                    {unreadLabel}
+                  </span>
+                )}
+              </Link>
+            )}
           </nav>
           <div className="flex gap-2 mt-3">
             <button

@@ -168,8 +168,8 @@ export function SearchPage() {
   };
 
   return (
-    <div className="px-4 md:px-8 lg:px-16 py-6 min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto">
+    <div className="px-4 md:px-8 lg:px-10 py-6 min-h-screen bg-background">
+      <div className="w-full">
         {/* Search bar */}
         <div className="flex gap-2 mb-4">
           <div className="flex-1 relative">
@@ -329,9 +329,9 @@ export function SearchPage() {
                 <p>Finding the perfect basha for you...</p>
               </div>
             ) : listings.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {listings.map((l: ListingData) => (
-                  <ListingCard key={l.id} listing={l} />
+                  <ListingCard key={l.id} listing={l} compact />
                 ))}
               </div>
             ) : (

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { 
+  useClearAiHistoryMutation,
   useGetAiHistoryQuery, 
   useSecureChatMutation 
 } from "../redux/features/ai/aiApi";
@@ -30,6 +31,13 @@ const initialMessages: ChatMessage[] = [
   },
 ];
 
+function getInitialMessages(): ChatMessage[] {
+  return initialMessages.map((message) => ({
+    ...message,
+    time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+  }));
+}
+
 export function useAiChat(isAuthenticated: boolean) {
   const [chatInput, setChatInput] = useState("");
   const [listingPageByMsg, setListingPageByMsg] = useState<Record<number, number>>({});
@@ -50,6 +58,7 @@ export function useAiChat(isAuthenticated: boolean) {
     skip: !isAuthenticated,
   });
   const [secureChat] = useSecureChatMutation();
+  const [clearAiHistory, { isLoading: isClearingConversation }] = useClearAiHistoryMutation();
 
   useEffect(() => {
     if (historyData?.messages && Array.isArray(historyData.messages)) {
@@ -173,6 +182,27 @@ export function useAiChat(isAuthenticated: boolean) {
     }
   };
 
+  const clearConversation = async () => {
+    if (streamTimerRef.current !== null) {
+      window.clearInterval(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+
+    setIsTyping(false);
+    setChatInput("");
+    setListingPageByMsg({});
+
+    if (isAuthenticated) {
+      try {
+        await clearAiHistory().unwrap();
+      } catch {
+        // Still reset the visible conversation so users can start fresh.
+      }
+    }
+
+    setMessages(getInitialMessages());
+  };
+
   return {
     chatInput,
     setChatInput,
@@ -182,5 +212,7 @@ export function useAiChat(isAuthenticated: boolean) {
     listingPageByMsg,
     setListingPageByMsg,
     handleSend,
+    clearConversation,
+    isClearingConversation,
   };
 }
